@@ -1,0 +1,43 @@
+@import 'tailwindcss';
+
+@theme {
+    /* Swiss Modernism 2.0 — Soft Light Mode (PRD §3) */
+    --color-canvas:  #F8FAFC;   /* Slate 50  — main app canvas */
+    --color-surface: #FFFFFF;   /* White     — raised panels */
+    --color-border:  #E2E8F0;   /* Slate 200 — hairline separators */
+    --color-text:    #0F172A;   /* Slate 900 — primary typography */
+    --color-muted:   #64748B;   /* Slate 500 — secondary labels */
+    --color-accent:  #4F46E5;   /* Indigo 600 — CTAs & active states */
+    --color-success: #10B981;   /* Emerald 500 — completed states */
+
+    --font-family-sans: 'Inter', system-ui, sans-serif;
+}
+
+@layer base {
+    body {
+        font-family: var(--font-family-sans);
+        background-color: var(--color-canvas);
+        color: var(--color-text);
+    }
+    * { box-sizing: border-box; }
+}
+
+@layer utilities {
+    .bg-canvas   { background-color: var(--color-canvas); }
+    .bg-surface  { background-color: var(--color-surface); }
+    .border-ui   { border-color: var(--color-border); }
+    .text-muted  { color: var(--color-muted); }
+    .text-accent { color: var(--color-accent); }
+    .text-success { color: var(--color-success); }
+    .ring-accent { --tw-ring-color: var(--color-accent); }
+}
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+}
