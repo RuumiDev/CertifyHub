@@ -216,6 +216,7 @@ export default function MicroEditor({ batchId, record, templateUrl, globalLayers
                         activeId={activeLayer}
                         onSelect={setActiveLayer}
                         onUpdate={updateLayer}
+                        onUpdateAll={(patch) => setLayers((prev) => prev.map((l) => ({ ...l, ...patch })))}
                         fontOptions={fontOptions}
                         onFontAdded={(opt) => setFontOptions((prev) => {
                             const idx = prev.findIndex((f) => f.value === opt.value);

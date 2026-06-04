@@ -7,11 +7,12 @@ interface Props {
     activeId: string | null;
     onSelect: (id: string) => void;
     onUpdate: (id: string, patch: Partial<Layer>) => void;
+    onUpdateAll: (patch: Partial<Layer>) => void;  // apply patch to every layer (used on font upload)
     fontOptions: FontOption[];
     onFontAdded: (opt: FontOption) => void;
 }
 
-export default function LayerPanel({ layers, activeId, onSelect, onUpdate, fontOptions, onFontAdded }: Props) {
+export default function LayerPanel({ layers, activeId, onSelect, onUpdate, onUpdateAll, fontOptions, onFontAdded }: Props) {
     const active = layers.find((l) => l.id === activeId) ?? null;
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploading, setUploading] = useState(false);
@@ -28,10 +29,9 @@ export default function LayerPanel({ layers, activeId, onSelect, onUpdate, fontO
             await fontFace.load();
             document.fonts.add(fontFace);
 
-            // Update active layer fontFamily immediately for canvas preview
-            if (activeId) {
-                onUpdate(activeId, { fontFamily: fontName });
-            }
+            // Apply new font to ALL layers so every text field uses the same typeface.
+            // This matches the expected UX: uploading one font = global font change.
+            onUpdateAll({ fontFamily: fontName });
 
             // 2. Soft-persist to server for GD back-end rendering (best-effort)
             //    A server rejection won't break the canvas — fontPath just stays null.
@@ -46,9 +46,8 @@ export default function LayerPanel({ layers, activeId, onSelect, onUpdate, fontO
                     { headers: { 'X-CSRF-TOKEN': csrfToken } },
                 );
                 serverPath = data.path;
-                if (activeId) {
-                    onUpdate(activeId, { fontPath: serverPath });
-                }
+                // Apply fontPath to ALL layers too
+                onUpdateAll({ fontPath: serverPath });
             } catch {
                 // Server upload failed — canvas preview still works, GD rendering will use fallback
                 console.warn('Font server upload failed; canvas preview active but server-side rendering will use fallback font.');

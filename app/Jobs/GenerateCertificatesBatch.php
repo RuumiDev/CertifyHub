@@ -111,6 +111,10 @@ class GenerateCertificatesBatch implements ShouldQueue
         // sharing a fontFamily inherits the TTF even if fontPath was only set on one of them.
         $fontRegistry = $this->buildFontRegistry($settings);
 
+        // Also collect the first usable uploaded font path as an absolute last-resort fallback.
+        // Covers old saved settings where some layers have no fontPath at all.
+        $anyUploadedFont = !empty($fontRegistry) ? array_values($fontRegistry)[0] : null;
+
         foreach ($layers as $layer) {
             try {
                 $text = $this->resolveLayerText($layer, $record);
@@ -136,6 +140,7 @@ class GenerateCertificatesBatch implements ShouldQueue
                 $yPercent  = (float) ($layer['y'] ?? 50.0);
                 $fontPath  = $this->resolveFontPath($layer['fontPath'] ?? null)
                              ?? ($fontRegistry[$layer['fontFamily'] ?? ''] ?? null)
+                             ?? $anyUploadedFont
                              ?? $this->resolveSystemFontFallback();
 
                 Log::info('CertifyHub: font resolution', [
