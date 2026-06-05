@@ -25,7 +25,7 @@ export interface FontOption {
 interface BatchData {
     id: string;
     template_path: string;
-    global_settings: { layers?: Layer[]; canvasWidth?: number } | null;
+    global_settings: { layers?: Layer[] } | null;
 }
 
 interface RecordRow {
@@ -131,13 +131,10 @@ export default function Studio({ batch, templateUrl, records }: Props) {
     const save = async () => {
         setSaving(true);
         try {
-            // Capture the rendered canvas width so the backend can scale font
-            // sizes proportionally against the original high-res image dimensions.
-            const canvasWidth = imageRef.current?.getBoundingClientRect().width ?? 800;
             await fetch(`/batch/${batch.id}/settings`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
-                body: JSON.stringify({ global_settings: { layers, canvasWidth } }),
+                body: JSON.stringify({ global_settings: { layers } }),
             });
         } finally {
             setSaving(false);
@@ -219,7 +216,7 @@ export default function Studio({ batch, templateUrl, records }: Props) {
                             <div
                                 key={layer.id}
                                 onPointerDown={(e) => handleMouseDown(e, layer.id)}
-                                onTouchStart={(e) => handleMouseDown(e, layer.id)}                                style={{
+                                style={{
                                     position: 'absolute',
                                     left: `${layer.x}%`,
                                     top: `${layer.y}%`,

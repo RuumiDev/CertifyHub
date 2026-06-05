@@ -14,6 +14,8 @@ class GenerateCertificatesBatch implements ShouldQueue
 {
     use Queueable;
 
+    private const STUDIO_BASE_WIDTH = 800.0;
+
     public int $timeout = 600;
     public int $tries = 1;
 
@@ -102,10 +104,7 @@ class GenerateCertificatesBatch implements ShouldQueue
         $height = \imagesy($src);
 
         $layers = $settings['layers'] ?? [];
-        // Canvas width (px) at the time the user saved the design — used to
-        // scale font sizes proportionally onto the full-resolution image.
-        $canvasWidth = (float) ($settings['canvasWidth'] ?? 800);
-        if ($canvasWidth <= 0) $canvasWidth = 800;
+        $scaleMultiplier = $width / self::STUDIO_BASE_WIDTH;
 
         // Build a fontFamily → resolved-path registry from all layers so that every layer
         // sharing a fontFamily inherits the TTF even if fontPath was only set on one of them.
@@ -121,19 +120,17 @@ class GenerateCertificatesBatch implements ShouldQueue
                 if ($text === '') continue;
 
                 $fontSize  = (int) ($layer['fontSize'] ?? 24);
-                // Scale font size proportionally: studio px → actual image px
-                // Formula: (studioFontSize / canvasWidth) × imageWidth
-                $scaledFontSize = (int) round(($fontSize / $canvasWidth) * $width);
+                $scaledFontSize = (int) round($fontSize * $scaleMultiplier);
                 if ($scaledFontSize < 1) $scaledFontSize = 1;
 
                 Log::info('CertifyHub: font scale', [
                     'layer'          => $layer['field'] ?? '?',
                     'record_id'      => $record->id,
                     'studioFontSize' => $fontSize,
-                    'canvasWidth'    => $canvasWidth,
+                    'studioBaseWidth'=> self::STUDIO_BASE_WIDTH,
                     'imageWidth'     => $width,
                     'scaledFontSize' => $scaledFontSize,
-                    'scaleRatio'     => round($width / $canvasWidth, 2),
+                    'scaleRatio'     => round($scaleMultiplier, 2),
                 ]);
                 $colorHex  = $layer['color'] ?? '#000000';
                 $xPercent  = (float) ($layer['x'] ?? 50.0);
@@ -142,6 +139,15 @@ class GenerateCertificatesBatch implements ShouldQueue
                              ?? ($fontRegistry[$layer['fontFamily'] ?? ''] ?? null)
                              ?? $anyUploadedFont
                              ?? $this->resolveSystemFontFallback();
+
+                if ($fontPath !== null && !is_file($fontPath)) {
+                    Log::warning('CertifyHub: resolved font path is not a readable file, switching to fallback.', [
+                        'layer'     => $layer['field'] ?? 'unknown',
+                        'font_path' => $fontPath,
+                        'record_id' => $record->id,
+                    ]);
+                    $fontPath = null;
+                }
 
                 Log::info('CertifyHub: font resolution', [
                     'layer'           => $layer['field'] ?? 'unknown',
@@ -158,7 +164,7 @@ class GenerateCertificatesBatch implements ShouldQueue
                 $color = \imagecolorallocate($src, $r, $g, $b);
 
                 if ($fontPath && file_exists($fontPath)) {
-                    $align      = $layer['align'] ?? 'center';
+                    $align      = strtolower((string) ($layer['align'] ?? 'center'));
                     $ptSize     = $scaledFontSize;
                     $lines      = explode("\n", $text);
                     $totalLines = count($lines);
@@ -167,18 +173,19 @@ class GenerateCertificatesBatch implements ShouldQueue
                     foreach ($lines as $i => $line) {
                         $bbox = \imagettfbbox($ptSize, 0, $fontPath, $line);
                         if ($bbox === false) {
-                            // imagettfbbox failed: FreeType may not support this font.
-                            // Fall back to built-in imagestring for this line.
-                            Log::warning('CertifyHub: imagettfbbox returned false — font unusable by GD/FreeType, using imagestring fallback.', [
+                            // imagettfbbox failed: keep TTF draw path with estimated metrics
+                            // so size/alignment stays close to studio intent.
+                            Log::warning('CertifyHub: imagettfbbox returned false — using estimated text metrics for alignment.', [
                                 'fontPath'  => $fontPath,
                                 'ptSize'    => $ptSize,
                                 'record_id' => $record->id,
                             ]);
-                            \imagestring($src, 5, $x, $y + $i * 16, $line, $color);
-                            continue;
+                            $textWidth  = (int) round(strlen($line) * $ptSize * 0.6);
+                            $textHeight = $ptSize;
+                        } else {
+                            $textWidth  = abs($bbox[2] - $bbox[0]);
+                            $textHeight = abs($bbox[5] - $bbox[1]);
                         }
-                        $textWidth  = abs($bbox[2] - $bbox[0]);
-                        $textHeight = abs($bbox[5] - $bbox[1]);
 
                         // Center text at the layer's X coordinate (not always image centre).
                         // Default X is 50 %, so existing designs are unaffected.
@@ -196,18 +203,21 @@ class GenerateCertificatesBatch implements ShouldQueue
                             $drawY = $y + (int) round($textHeight / 2);
                         }
 
-                        \imagettftext($src, $ptSize, 0, $drawX, $drawY, $color, $fontPath, $line);
+                        $drawn = \imagettftext($src, $ptSize, 0, $drawX, $drawY, $color, $fontPath, $line);
+                        if ($drawn === false) {
+                            \imagestring($src, 5, $drawX, $drawY, $line, $color);
+                        }
                     }
                 } else {
                     // Last-resort: GD built-in imagestring — fixed 8×16px glyphs.
                     // This path should rarely be hit since resolveSystemFontFallback
                     // covers common Windows and Linux system font locations.
-                    $align = $layer['align'] ?? 'center';
+                    $align = strtolower((string) ($layer['align'] ?? 'center'));
                     foreach (explode("\n", $text) as $i => $line) {
                         $charWidth = 8;
                         $textWidth = strlen($line) * $charWidth;
                         $drawX = match ($align) {
-                            'center' => (int) round($width / 2 - $textWidth / 2),
+                            'center' => (int) round($x - $textWidth / 2),
                             'left'   => $x,
                             default  => $x - $textWidth,
                         };

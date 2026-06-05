@@ -184,6 +184,8 @@ class BatchController extends Controller
             'global_settings' => ['required', 'array'],
         ]);
 
+        unset($validated['global_settings']['canvasWidth']);
+
         $batch->update(['global_settings' => $validated['global_settings']]);
 
         return response()->json(['ok' => true]);

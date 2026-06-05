@@ -13,8 +13,10 @@ interface RecordRow {
 
 interface BatchData {
     id: string;
-    global_settings: { layers?: Layer[]; canvasWidth?: number } | null;
+    global_settings: { layers?: Layer[] } | null;
 }
+
+const STUDIO_BASE_WIDTH = 800;
 
 interface Props {
     batch: BatchData;
@@ -259,8 +261,6 @@ export default function Preview({ batch, templateUrl, records: initialRecords }:
             <div className="w-full max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 px-6 py-6 pb-12">
                 {records.map((record) => {
                     const layers: Layer[] = record.override_settings?.layers ?? batch.global_settings?.layers ?? [];
-                    // canvasWidth stored at save time; used to scale fonts proportionally in thumbnails
-                    const canvasWidth: number = batch.global_settings?.canvasWidth ?? 800;
                     const displayName = record.group_identifier
                         ? `${record.group_identifier} (${record.team_members?.length ?? 0} members)`
                         : (record.recipient_name ?? '');
@@ -282,7 +282,7 @@ export default function Preview({ batch, templateUrl, records: initialRecords }:
                                 {layers.map((layer) => {
                                     // Font size as fraction of canvas width, expressed as cqw so it
                                     // scales with the thumbnail card — matches backend scaling formula.
-                                    const fontPct = (layer.fontSize / canvasWidth) * 100; // % of container width
+                                    const fontPct = (layer.fontSize / STUDIO_BASE_WIDTH) * 100; // % of container width
                                     let textNode: React.ReactNode;
 
                                     if (layer.field === 'name' && record.team_members && record.team_members.length > 0) {
