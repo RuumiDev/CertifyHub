@@ -91,26 +91,31 @@ export default function Studio({ batch, templateUrl, records }: Props) {
         setLayers((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
     };
 
-    const handleMouseDown = (e: React.MouseEvent, layerId: string) => {
+    const handleMouseDown = (e: React.MouseEvent | React.TouchEvent, layerId: string) => {
         e.preventDefault();
-        e.stopPropagation();
+        if ('stopPropagation' in e) e.stopPropagation();
         if (!imageRef.current) return;
         const rect = imageRef.current.getBoundingClientRect();
         const layer = layers.find((l) => l.id === layerId);
         if (!layer) return;
-        const mouseXPct = ((e.clientX - rect.left) / rect.width) * 100;
-        const mouseYPct = ((e.clientY - rect.top) / rect.height) * 100;
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const mouseXPct = ((clientX - rect.left) / rect.width) * 100;
+        const mouseYPct = ((clientY - rect.top) / rect.height) * 100;
         dragOffset.current = { dx: mouseXPct - layer.x, dy: mouseYPct - layer.y };
         setActiveLayer(layerId);
         setDragging(layerId);
     };
 
-    const handleMouseMove = useCallback(
-        (e: React.MouseEvent<HTMLDivElement>) => {
+    const handlePointerMove = useCallback(
+        (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
             if (!dragging || !imageRef.current) return;
+            if ('touches' in e) e.preventDefault();
             const rect = imageRef.current.getBoundingClientRect();
-            const rawX = ((e.clientX - rect.left) / rect.width) * 100;
-            const rawY = ((e.clientY - rect.top) / rect.height) * 100;
+            const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+            const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+            const rawX = ((clientX - rect.left) / rect.width) * 100;
+            const rawY = ((clientY - rect.top) / rect.height) * 100;
             const x = parseFloat(Math.min(100, Math.max(0, rawX - dragOffset.current.dx)).toFixed(2));
             const y = parseFloat(Math.min(100, Math.max(0, rawY - dragOffset.current.dy)).toFixed(2));
             updateLayer(dragging, { x, y });
@@ -118,7 +123,7 @@ export default function Studio({ batch, templateUrl, records }: Props) {
         [dragging],
     );
 
-    const handleMouseUp = () => setDragging(null);
+    const handlePointerUp = () => setDragging(null);
 
     const csrf = (): string =>
         (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? '';
@@ -180,19 +185,19 @@ export default function Studio({ batch, templateUrl, records }: Props) {
                 </div>
             </div>
 
-            <div className="flex flex-1 overflow-hidden">
-                {/* Canvas — outer area captures mouse events */}
+            <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
+                {/* Canvas — outer area captures pointer events (mouse + touch) */}
                 <div
-                    className="relative flex-1 overflow-hidden select-none bg-slate-100 flex items-center justify-center"
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUp}
-                    onMouseLeave={handleMouseUp}
+                    className="relative flex-1 min-h-0 overflow-hidden select-none bg-slate-100 flex items-center justify-center pb-[55vh] lg:pb-0"
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    onPointerLeave={handlePointerUp}
                 >
                     {/* imageRef: scoped to the actual image dimensions for correct % math */}
                     <div
                         ref={imageRef}
                         className="relative shadow-md"
-                        style={{ display: 'inline-block' }}
+                        style={{ display: 'inline-block', touchAction: 'none' }}
                     >
                         <img
                             src={templateUrl}
@@ -213,8 +218,8 @@ export default function Studio({ batch, templateUrl, records }: Props) {
                         {visibleLayers.map((layer) => (
                             <div
                                 key={layer.id}
-                                onMouseDown={(e) => handleMouseDown(e, layer.id)}
-                                style={{
+                                onPointerDown={(e) => handleMouseDown(e, layer.id)}
+                                onTouchStart={(e) => handleMouseDown(e, layer.id)}                                style={{
                                     position: 'absolute',
                                     left: `${layer.x}%`,
                                     top: `${layer.y}%`,
@@ -225,6 +230,7 @@ export default function Studio({ batch, templateUrl, records }: Props) {
                                         : 'translate(-100%, -50%)',
                                     cursor: dragging === layer.id ? 'grabbing' : 'grab',
                                     userSelect: 'none',
+                                    touchAction: 'none',
                                 }}
                             >
                                 <span

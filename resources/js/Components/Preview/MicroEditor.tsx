@@ -64,26 +64,31 @@ export default function MicroEditor({ batchId, record, templateUrl, globalLayers
     const updateLayer = (id: string, patch: Partial<Layer>) =>
         setLayers((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
 
-    const handleMouseDown = (e: React.MouseEvent, layerId: string) => {
+    const handlePointerDown = (e: React.PointerEvent | React.TouchEvent, layerId: string) => {
         e.preventDefault();
         e.stopPropagation();
         if (!imageRef.current) return;
         const rect  = imageRef.current.getBoundingClientRect();
         const layer = layers.find((l) => l.id === layerId);
         if (!layer) return;
-        const mouseXPct = ((e.clientX - rect.left) / rect.width)  * 100;
-        const mouseYPct = ((e.clientY - rect.top)  / rect.height) * 100;
-        dragOffset.current = { dx: mouseXPct - layer.x, dy: mouseYPct - layer.y };
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const pctX = ((clientX - rect.left) / rect.width)  * 100;
+        const pctY = ((clientY - rect.top)  / rect.height) * 100;
+        dragOffset.current = { dx: pctX - layer.x, dy: pctY - layer.y };
         setActiveLayer(layerId);
         setDragging(layerId);
     };
 
-    const handleMouseMove = useCallback(
-        (e: React.MouseEvent<HTMLDivElement>) => {
+    const handlePointerMove = useCallback(
+        (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
             if (!dragging || !imageRef.current) return;
+		if ('touches' in e) e.preventDefault();
             const rect = imageRef.current.getBoundingClientRect();
-            const rawX = ((e.clientX - rect.left) / rect.width)  * 100;
-            const rawY = ((e.clientY - rect.top)  / rect.height) * 100;
+		const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+		const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+		const rawX = ((clientX - rect.left) / rect.width) * 100;
+            const rawY = ((clientY - rect.top) / rect.height) * 100;
             const x = parseFloat(Math.min(100, Math.max(0, rawX - dragOffset.current.dx)).toFixed(2));
             const y = parseFloat(Math.min(100, Math.max(0, rawY - dragOffset.current.dy)).toFixed(2));
             updateLayer(dragging, { x, y });
@@ -91,7 +96,7 @@ export default function MicroEditor({ batchId, record, templateUrl, globalLayers
         [dragging],
     );
 
-    const handleMouseUp = () => setDragging(null);
+    const handlePointerUp = () => setDragging(null);
 
     const save = async () => {
         setSaving(true);
@@ -144,15 +149,15 @@ export default function MicroEditor({ batchId, record, templateUrl, globalLayers
 
                 {/* Body */}
                 <div className="flex flex-1 min-h-0">
-                    {/* Canvas — outer div captures mouse events across the full area */}
+                    {/* Canvas — outer div captures pointer events (mouse + touch) */}
                     <div
                         className="relative flex-1 overflow-hidden bg-slate-100 flex items-center justify-center"
-                        onMouseMove={handleMouseMove}
-                        onMouseUp={handleMouseUp}
-                        onMouseLeave={handleMouseUp}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={handlePointerUp}
+                        onPointerLeave={handlePointerUp}
                     >
                         {/* imageRef: inline-block so it matches the rendered image exactly */}
-                        <div ref={imageRef} className="relative shadow-md" style={{ display: 'inline-block' }}>
+                        <div ref={imageRef} className="relative shadow-md" style={{ display: 'inline-block', touchAction: 'none' }}>
                             <img
                                 src={templateUrl}
                                 alt="Template"
@@ -172,7 +177,7 @@ export default function MicroEditor({ batchId, record, templateUrl, globalLayers
                                 return (
                                     <div
                                         key={layer.id}
-                                        onMouseDown={(e) => handleMouseDown(e, layer.id)}
+                                        onPointerDown={(e) => handlePointerDown(e, layer.id)}
                                         style={{
                                             position:  'absolute',
                                             left:      `${layer.x}%`,

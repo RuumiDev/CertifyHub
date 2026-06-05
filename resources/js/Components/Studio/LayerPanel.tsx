@@ -64,7 +64,7 @@ export default function LayerPanel({ layers, activeId, onSelect, onUpdate, onUpd
     };
 
     return (
-        <aside className="w-72 bg-white border-l border-slate-200 flex flex-col overflow-y-auto">
+        <aside className="fixed bottom-0 inset-x-0 z-40 max-h-[55vh] overflow-y-auto bg-white border-t border-slate-200 shadow-xl flex flex-col lg:relative lg:inset-x-auto lg:z-auto lg:w-72 lg:max-h-none lg:border-l lg:border-t-0 lg:shadow-none lg:flex-col">
             {/* Layer list */}
             <div className="p-4 border-b border-slate-200">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Layers</p>
@@ -79,7 +79,7 @@ export default function LayerPanel({ layers, activeId, onSelect, onUpdate, onUpd
                                     : 'text-slate-700 hover:bg-slate-100'
                             }`}
                         >
-                            {layer.label}
+                            {layer.label} 
                         </button>
                     ))}
                 </div>
@@ -248,6 +248,32 @@ export default function LayerPanel({ layers, activeId, onSelect, onUpdate, onUpd
             ) : (
                 <div className="p-4 text-sm text-slate-400">
                     Select a layer to edit its properties.
+                </div>
+            )}
+            {/* Mobile-only quick nudge — 0.5 % steps, finger-friendly */}
+            {active && (
+                <div className="lg:hidden px-4 py-3 border-t border-slate-200 bg-slate-50">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mb-2">Quick Nudge (0.5 %)</p>
+                    <div className="grid grid-cols-3 gap-1 w-fit mx-auto">
+                        <div />
+                        <button
+                            onPointerDown={() => onUpdate(active.id, { y: parseFloat(Math.max(0, active.y - 0.5).toFixed(2)) })}
+                            className="h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-lg font-bold flex items-center justify-center active:scale-95 transition-transform"
+                        >▴</button>
+                        <div />
+                        <button
+                            onPointerDown={() => onUpdate(active.id, { x: parseFloat(Math.max(0, active.x - 0.5).toFixed(2)) })}
+                            className="h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-lg font-bold flex items-center justify-center active:scale-95 transition-transform"
+                        >◀</button>
+                        <button
+                            onPointerDown={() => onUpdate(active.id, { y: parseFloat(Math.min(100, active.y + 0.5).toFixed(2)) })}
+                            className="h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-lg font-bold flex items-center justify-center active:scale-95 transition-transform"
+                        >▾</button>
+                        <button
+                            onPointerDown={() => onUpdate(active.id, { x: parseFloat(Math.min(100, active.x + 0.5).toFixed(2)) })}
+                            className="h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-lg font-bold flex items-center justify-center active:scale-95 transition-transform"
+                        >▶</button>
+                    </div>
                 </div>
             )}
         </aside>
