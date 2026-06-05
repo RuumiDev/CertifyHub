@@ -42,7 +42,6 @@ services:
         value: database
       - key: FILESYSTEM_DISK
         value: local
-    preDeployCommand: php artisan migrate --force
 
 databases:
   - name: certifyhub-production-db
