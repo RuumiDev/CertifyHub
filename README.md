@@ -12,6 +12,7 @@ A lightweight, open-access batch certificate generator. Upload a template image 
 - [User Workflow](#user-workflow)
 - [Data Architecture](#data-architecture)
 - [Local Development](#local-development)
+- [Render Deployment](#render-deployment)
 - [Queue Worker](#queue-worker)
 - [CSV Format](#csv-format)
 - [Font Support](#font-support)
@@ -248,6 +249,55 @@ php artisan queue:work --timeout=600
 ```bash
 npm run build
 ```
+
+---
+
+## Render Deployment
+
+### Platform constraints
+
+- Render free web services use an ephemeral filesystem. Uploaded templates, uploaded fonts, and generated ZIP archives under `storage/app/public/` are fine for demos, but they are lost after instance restart or sleep.
+- For persistent production storage, move `public` disk to S3, Cloudinary, MinIO, or another object store.
+- SQLite is not suitable on Render free instances. Use PostgreSQL.
+
+### Recommended Render setup
+
+Fastest path is Blueprint deploy from [render.yaml](d:\Hirumi's D\Miki\Downloads\Code\CertifyHub\render.yaml). It creates:
+
+- one Docker-based web service using Apache + PHP 8.2 + PostgreSQL extensions
+- one managed PostgreSQL database
+
+Render will build from [Dockerfile](d:\Hirumi's D\Miki\Downloads\Code\CertifyHub\Dockerfile), run migrations as `preDeployCommand`, and health-check `/up`.
+
+If you deploy manually instead of Blueprint, use Docker runtime and point Render at this repository's `Dockerfile`.
+
+### Required environment variables
+
+| Key | Value |
+|---|---|
+| `APP_NAME` | `CertifyHub` |
+| `APP_ENV` | `production` |
+| `APP_DEBUG` | `false` |
+| `APP_URL` | Your Render app URL, set manually during first Blueprint sync |
+| `APP_KEY` | Generated production key |
+| `DB_CONNECTION` | `pgsql` |
+| `DB_URL` | Injected automatically from Blueprint database reference |
+| `QUEUE_CONNECTION` | `database` |
+| `QUEUE_FALLBACK_AFTER_RESPONSE` | `true` on free tier without dedicated worker |
+
+### Free-tier queue fallback
+
+CertifyHub now includes production fallback for Render free tier in [app/Providers/AppServiceProvider.php](d:\Hirumi's D\Miki\Downloads\Code\CertifyHub\app\Providers\AppServiceProvider.php). When all of these are true:
+
+- app runs in `production`
+- request is web request, not console command
+- `QUEUE_FALLBACK_AFTER_RESPONSE=true`
+- queue driver is `database`
+- `jobs` table exists and has pending rows
+
+app will execute one queued job after response is sent by running `php artisan queue:work --once` in-process. This is fallback for demo or low-volume deployments where free tier cannot run separate worker.
+
+For normal production, keep dedicated queue worker and leave `QUEUE_FALLBACK_AFTER_RESPONSE=false`.
 
 ---
 

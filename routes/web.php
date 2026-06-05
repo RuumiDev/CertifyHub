@@ -28,3 +28,4 @@ Route::get('/batch/{batch}/download', [ExportController::class, 'download'])->na
 // Font upload
 Route::post('/fonts/upload', [ExportController::class, 'uploadFont'])->name('fonts.upload');
 
+

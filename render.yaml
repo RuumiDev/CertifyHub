@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: certifyhub-app
+    runtime: docker
+    plan: free
+    region: oregon
+    autoDeployTrigger: commit
+    healthCheckPath: /up
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: APP_NAME
+        value: CertifyHub
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_KEY
+        generateValue: true
+      - key: APP_URL
+        sync: false
+      - key: LOG_CHANNEL
+        value: stack
+      - key: LOG_LEVEL
+        value: info
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DB_URL
+        fromDatabase:
+          name: certifyhub-production-db
+          property: connectionString
+      - key: QUEUE_CONNECTION
+        value: database
+      - key: QUEUE_FALLBACK_AFTER_RESPONSE
+        value: "true"
+      - key: QUEUE_FALLBACK_TIMEOUT
+        value: "60"
+      - key: QUEUE_FALLBACK_MEMORY
+        value: "128"
+      - key: SESSION_DRIVER
+        value: database
+      - key: CACHE_STORE
+        value: database
+      - key: FILESYSTEM_DISK
+        value: local
+    preDeployCommand: php artisan migrate --force
+
+databases:
+  - name: certifyhub-production-db
+    plan: free
+    region: oregon
+    databaseName: certifyhub_prod
+    user: certifyhub_admin

@@ -1,0 +1,17 @@
+.git
+.github
+.agents
+.vscode
+node_modules
+vendor
+public/build
+public/hot
+public/storage
+storage/app/public/templates
+storage/app/public/fonts
+storage/app/public/exports
+storage/logs
+.env
+.env.*
+PRD.md
+README.md
