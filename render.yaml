@@ -39,7 +39,9 @@ services:
       - key: SESSION_DRIVER
         value: database
       - key: CACHE_STORE
-        value: database
+        value: file
+      - key: SESSION_DRIVER
+        value: file
       - key: FILESYSTEM_DISK
         value: local
 

@@ -46,9 +46,17 @@ class BatchController extends Controller
 
         // Stream-parse CSV
         $csvPath = $request->file('csv')->getRealPath();
-        $handle = fopen($csvPath, 'r');
+        $handle = $csvPath ? fopen($csvPath, 'r') : false;
+
+        if ($handle === false) {
+            return back()->withErrors([
+                'csv' => 'Could not open CSV file. Please upload a valid CSV.',
+            ])->withInput();
+        }
+
         $headers = null;
         $grouped = [];
+        $parsedRows = 0;
 
         // Helper: case-insensitive column lookup against normalised lowercase key map
         $lookup = function (array $normalised, array ...$candidates): string {
@@ -69,8 +77,18 @@ class BatchController extends Controller
                 continue;
             }
 
+            // Skip malformed rows that do not match the header column count.
+            if (count($row) !== count($headers)) {
+                continue;
+            }
+
             // Normalise to lowercase keys for case-insensitive column matching
             $raw  = array_combine($headers, $row);
+
+            if ($raw === false) {
+                continue;
+            }
+
             $data = array_combine(
                 array_map('strtolower', array_keys($raw)),
                 array_values($raw),
@@ -83,6 +101,8 @@ class BatchController extends Controller
             if (empty($name)) {
                 continue;
             }
+
+            $parsedRows++;
 
             if (!empty($group)) {
                 $grouped[$group][] = $name;
@@ -98,6 +118,15 @@ class BatchController extends Controller
         }
 
         fclose($handle);
+
+        if ($parsedRows === 0) {
+            Storage::disk('public')->delete($templatePath);
+            $batch->delete();
+
+            return back()->withErrors([
+                'csv' => 'No rows could be parsed. Check your CSV format.',
+            ])->withInput();
+        }
 
         // Create one record per group, storing members as a JSON array
         foreach ($grouped as $groupName => $members) {
