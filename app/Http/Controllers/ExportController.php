@@ -17,10 +17,12 @@ class ExportController extends Controller
     public function execute(Request $request, Batch $batch): \Illuminate\Http\JsonResponse
     {
         $validated = $request->validate([
-            'export_format' => ['required', 'in:pdf,png,jpg'],
+            'export_format' => ['required', 'in:pdf,png,jpg,jpeg'],
         ]);
 
-        $batch->update(['export_format' => $validated['export_format']]);
+        $exportFormat = $validated['export_format'] === 'jpeg' ? 'jpg' : $validated['export_format'];
+
+        $batch->update(['export_format' => $exportFormat]);
         $batch->records()->update(['generation_status' => 'pending']);
 
         GenerateCertificatesBatch::dispatch($batch);
@@ -39,9 +41,12 @@ class ExportController extends Controller
         $done      = ($completed + $failed) >= $total && $total > 0;
 
         $zipPath   = storage_path("app/public/exports/{$batch->id}.zip");
+        $zipExists = file_exists($zipPath);
+        $zipSize   = $zipExists ? filesize($zipPath) : 0;
         $zipReady  = $done && $completed > 0
-                     && file_exists($zipPath)
-                     && filesize($zipPath) > 0;
+                     && $zipExists
+                     && is_readable($zipPath)
+                     && $zipSize > 0;
 
         return response()->json([
             'total'     => $total,
@@ -49,6 +54,7 @@ class ExportController extends Controller
             'failed'    => $failed,
             'done'      => $done,
             'zip_ready' => $zipReady,
+            'zip_size'  => $zipSize,
         ]);
     }
 
@@ -58,13 +64,16 @@ class ExportController extends Controller
     public function download(Batch $batch): \Symfony\Component\HttpFoundation\BinaryFileResponse|\Illuminate\Http\RedirectResponse
     {
         $zipPath = storage_path("app/public/exports/{$batch->id}.zip");
+        $zipExists = file_exists($zipPath);
+        $zipSize = $zipExists ? filesize($zipPath) : null;
 
-        if (!file_exists($zipPath) || filesize($zipPath) === 0) {
+        if (!$zipExists || !is_readable($zipPath) || $zipSize === 0) {
             Log::error('CertifyHub: ZIP archive missing or empty on download request.', [
                 'batch_id'  => $batch->id,
                 'zip_path'  => $zipPath,
-                'exists'    => file_exists($zipPath),
-                'size'      => file_exists($zipPath) ? filesize($zipPath) : null,
+                'exists'    => $zipExists,
+                'readable'  => $zipExists ? is_readable($zipPath) : false,
+                'size'      => $zipSize,
             ]);
 
             return redirect()->back()->withErrors([

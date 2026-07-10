@@ -7,7 +7,6 @@ use App\Models\Record;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use ZipArchive;
 
 class GenerateCertificatesBatch implements ShouldQueue
@@ -23,11 +22,11 @@ class GenerateCertificatesBatch implements ShouldQueue
 
     public function handle(): void
     {
-        $exportDir = storage_path("app/public/exports/{$this->batch->id}");
+        $exportsRoot = storage_path('app/public/exports');
+        $this->ensureWritableDirectory($exportsRoot);
 
-        if (!is_dir($exportDir)) {
-            mkdir($exportDir, 0755, true);
-        }
+        $exportDir = storage_path("app/public/exports/{$this->batch->id}");
+        $this->ensureWritableDirectory($exportDir);
 
         $records = $this->batch->records()->where('generation_status', 'pending')->get();
 
@@ -75,7 +74,13 @@ class GenerateCertificatesBatch implements ShouldQueue
         [$image, $actualFormat] = $this->renderCertificate($templateFullPath, $record, $settings, $format);
 
         $outputFile = $exportDir . '/' . $this->safeFilename($record) . '.' . $actualFormat;
-        file_put_contents($outputFile, $image);
+        $bytes = @file_put_contents($outputFile, $image);
+
+        if ($bytes === false || $bytes === 0) {
+            throw new \RuntimeException("Failed to write export binary to {$outputFile}");
+        }
+
+        @chmod($outputFile, 0644);
     }
 
     private function renderCertificate(
@@ -138,9 +143,10 @@ class GenerateCertificatesBatch implements ShouldQueue
                 $fontPath  = $this->resolveFontPath($layer['fontPath'] ?? null)
                              ?? ($fontRegistry[$layer['fontFamily'] ?? ''] ?? null)
                              ?? $anyUploadedFont
+                             ?? $this->resolveRepositoryFontFallback($layer['fontFamily'] ?? null)
                              ?? $this->resolveSystemFontFallback();
 
-                if ($fontPath !== null && !is_file($fontPath)) {
+                if ($fontPath !== null && (!is_file($fontPath) || !is_readable($fontPath))) {
                     Log::warning('CertifyHub: resolved font path is not a readable file, switching to fallback.', [
                         'layer'     => $layer['field'] ?? 'unknown',
                         'font_path' => $fontPath,
@@ -163,7 +169,7 @@ class GenerateCertificatesBatch implements ShouldQueue
                 [$r, $g, $b] = $this->hexToRgb($colorHex);
                 $color = \imagecolorallocate($src, $r, $g, $b);
 
-                if ($fontPath && file_exists($fontPath)) {
+                if ($fontPath && file_exists($fontPath) && is_readable($fontPath)) {
                     $align      = strtolower((string) ($layer['align'] ?? 'center'));
                     $ptSize     = $scaledFontSize;
                     $lines      = explode("\n", $text);
@@ -235,16 +241,68 @@ class GenerateCertificatesBatch implements ShouldQueue
         }
 
         ob_start();
-        // PDF format: GD cannot produce real PDF — output PNG and rename to .png
-        $actualFormat = $format === 'pdf' ? 'png' : $format;
-        match ($actualFormat) {
+        $rasterFormat = $format === 'jpg' ? 'jpg' : 'png';
+        match ($rasterFormat) {
             'png'  => \imagepng($src),
             default => \imagejpeg($src, null, 92),
         };
-        $binary = ob_get_clean();
+        $rasterBinary = ob_get_clean();
         \imagedestroy($src);
 
-        return [$binary, $actualFormat];
+        if (!is_string($rasterBinary) || $rasterBinary === '') {
+            throw new \RuntimeException('Failed to render certificate raster output.');
+        }
+
+        if ($format === 'pdf') {
+            return [
+                $this->renderPdfFromRasterBinary($rasterBinary, $width, $height),
+                'pdf',
+            ];
+        }
+
+        return [$rasterBinary, $rasterFormat];
+    }
+
+    private function renderPdfFromRasterBinary(string $rasterBinary, int $pixelWidth, int $pixelHeight): string
+    {
+        $tmpDir = storage_path('app/framework/cache/certifyhub/pdf');
+        $this->ensureWritableDirectory($tmpDir);
+
+        $tmpImagePath = $tmpDir . '/cert_' . $this->batch->id . '_' . bin2hex(random_bytes(8)) . '.png';
+
+        try {
+            $written = @file_put_contents($tmpImagePath, $rasterBinary);
+            if ($written === false || $written === 0) {
+                throw new \RuntimeException("Failed to stage raster image for PDF at {$tmpImagePath}");
+            }
+
+            $pxToMm = 25.4 / 96;
+            $pageWidthMm = max(10.0, round($pixelWidth * $pxToMm, 2));
+            $pageHeightMm = max(10.0, round($pixelHeight * $pxToMm, 2));
+
+            $orientation = $pageWidthMm > $pageHeightMm ? 'L' : 'P';
+            $pageSize = $orientation === 'L'
+                ? [$pageHeightMm, $pageWidthMm]
+                : [$pageWidthMm, $pageHeightMm];
+
+            $pdf = new \FPDF($orientation, 'mm', $pageSize);
+            $pdf->SetMargins(0, 0, 0);
+            $pdf->SetAutoPageBreak(false, 0);
+            $pdf->AddPage($orientation, $pageSize);
+            $pdf->Image($tmpImagePath, 0, 0, $pageWidthMm, $pageHeightMm, 'PNG');
+
+            $pdfBinary = $pdf->Output('S');
+
+            if (!is_string($pdfBinary) || $pdfBinary === '') {
+                throw new \RuntimeException('FPDF returned an empty document.');
+            }
+
+            return $pdfBinary;
+        } finally {
+            if (is_file($tmpImagePath)) {
+                @unlink($tmpImagePath);
+            }
+        }
     }
 
     private function resolveLayerText(array $layer, Record $record): string
@@ -307,6 +365,9 @@ class GenerateCertificatesBatch implements ShouldQueue
     private function resolveSystemFontFallback(): ?string
     {
         $candidates = [
+            // Repository fallback fonts
+            public_path('assets/fonts/DejaVuSans.ttf'),
+            public_path('assets/fonts/Arial.ttf'),
             // Windows
             'C:\Windows\Fonts\arial.ttf',
             'C:\Windows\Fonts\Arial.ttf',
@@ -322,7 +383,32 @@ class GenerateCertificatesBatch implements ShouldQueue
         ];
 
         foreach ($candidates as $path) {
-            if (file_exists($path)) {
+            if (file_exists($path) && is_readable($path)) {
+                return $path;
+            }
+        }
+
+        return null;
+    }
+
+    private function resolveRepositoryFontFallback(?string $fontFamily): ?string
+    {
+        if (!$fontFamily) {
+            return null;
+        }
+
+        $base = trim(pathinfo($fontFamily, PATHINFO_FILENAME));
+        if ($base === '') {
+            return null;
+        }
+
+        $candidates = [
+            public_path('assets/fonts/' . $base . '.ttf'),
+            public_path('assets/fonts/' . $base . '.otf'),
+        ];
+
+        foreach ($candidates as $path) {
+            if (file_exists($path) && is_readable($path)) {
                 return $path;
             }
         }
@@ -336,26 +422,50 @@ class GenerateCertificatesBatch implements ShouldQueue
             return null;
         }
 
+        $relativePath = trim($relativePath);
+
+        if ($relativePath === '') {
+            return null;
+        }
+
+        if ($this->isAbsolutePath($relativePath)) {
+            return (file_exists($relativePath) && is_readable($relativePath)) ? $relativePath : null;
+        }
+
         // Use storage_path() for unambiguous absolute local resolution.
         // Storage::disk('public')->path() is equivalent but storage_path() is
         // explicit and avoids any filesystem disk config ambiguity.
-        $absPath = storage_path('app/public/' . ltrim($relativePath, '/'));
+        $normalizedRelativePath = ltrim(str_replace('\\', '/', $relativePath), '/');
 
-        if (!file_exists($absPath)) {
-            Log::error('CertifyHub: custom font asset missing — falling back to built-in font.', [
-                'expected_path' => $absPath,
-                'relative_path' => $relativePath,
-                'batch_id'      => $this->batch->id,
-            ]);
-            return null; // caller will fall back to imagestring()
+        $candidates = [
+            storage_path('app/public/' . $normalizedRelativePath),
+            public_path($normalizedRelativePath),
+            public_path('storage/' . $normalizedRelativePath),
+            public_path('assets/fonts/' . basename($normalizedRelativePath)),
+        ];
+
+        foreach ($candidates as $absPath) {
+            if (file_exists($absPath) && is_readable($absPath)) {
+                return $absPath;
+            }
         }
 
-        return $absPath;
+        if ($normalizedRelativePath !== '') {
+            Log::error('CertifyHub: custom font asset missing — falling back to built-in font.', [
+                'relative_path' => $normalizedRelativePath,
+                'checked_paths' => $candidates,
+                'batch_id'      => $this->batch->id,
+            ]);
+        }
+
+        return null;
     }
 
     private function createZip(string $exportDir): void
     {
         $zipPath = storage_path("app/public/exports/{$this->batch->id}.zip");
+        $this->ensureWritableDirectory(dirname($zipPath));
+
         $zip = new ZipArchive();
 
         if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
@@ -370,6 +480,32 @@ class GenerateCertificatesBatch implements ShouldQueue
         }
 
         $zip->close();
+
+        if (!file_exists($zipPath) || filesize($zipPath) === 0) {
+            throw new \RuntimeException("ZIP archive was created empty at {$zipPath}");
+        }
+
+        @chmod($zipPath, 0644);
+    }
+
+    private function ensureWritableDirectory(string $path): void
+    {
+        if (!is_dir($path)) {
+            if (!@mkdir($path, 0755, true) && !is_dir($path)) {
+                throw new \RuntimeException("Unable to create directory: {$path}");
+            }
+        }
+
+        @chmod($path, 0755);
+
+        if (!is_writable($path)) {
+            throw new \RuntimeException("Directory is not writable: {$path}");
+        }
+    }
+
+    private function isAbsolutePath(string $path): bool
+    {
+        return str_starts_with($path, '/') || (bool) preg_match('/^[A-Za-z]:[\\\\\/]/', $path);
     }
 
     private function safeFilename(Record $record): string

@@ -107,12 +107,13 @@ class BatchController extends Controller
             if (!empty($group)) {
                 $grouped[$group][] = $name;
             } else {
-                Record::create([
-                    'batch_id'               => $batch->id,
-                    'recipient_name'         => $name,
-                    'identification_number'  => $ic ?: null,
-                    'group_identifier'       => null,
-                    'generation_status'      => 'pending',
+                $batch->records()->create($this->normalizeRecordPayload([
+                    'recipient_name'        => $name,
+                    'identification_number' => $ic,
+                    'group_identifier'      => null,
+                    'team_members'          => null,
+                ]) + [
+                    'generation_status' => 'pending',
                 ]);
             }
         }
@@ -130,13 +131,13 @@ class BatchController extends Controller
 
         // Create one record per group, storing members as a JSON array
         foreach ($grouped as $groupName => $members) {
-            Record::create([
-                'batch_id'               => $batch->id,
-                'recipient_name'         => null,            // null for team records
-                'identification_number'  => null,
-                'group_identifier'       => $groupName,
-                'team_members'           => $members,        // ["Ahmad","Akmal","Abdullah"]
-                'generation_status'      => 'pending',
+            $batch->records()->create($this->normalizeRecordPayload([
+                'recipient_name'        => null,
+                'identification_number' => null,
+                'group_identifier'      => $groupName,
+                'team_members'          => $members,
+            ]) + [
+                'generation_status' => 'pending',
             ]);
         }
 
@@ -162,34 +163,128 @@ class BatchController extends Controller
         $validated = $request->validate([
             'records'                             => ['required', 'array'],
             'records.*.id'                        => ['sometimes', 'integer', 'exists:records,id'],
-            'records.*.recipient_name'            => ['nullable', 'string', 'max:255'],
-            'records.*.identification_number'     => ['nullable', 'string', 'max:255'],
-            'records.*.group_identifier'          => ['nullable', 'string', 'max:255'],
-            'records.*.team_members'              => ['nullable', 'array'],
-            'records.*.team_members.*'            => ['string', 'max:255'],
+            'records.*.recipient_name'            => ['nullable'],
+            'records.*.identification_number'     => ['nullable'],
+            'records.*.group_identifier'          => ['nullable'],
+            'records.*.team_members'              => ['nullable'],
         ]);
 
         foreach ($validated['records'] as $row) {
+            $payload = $this->normalizeRecordPayload($row);
+
+            // Skip rows that are still empty after normalization.
+            if (
+                $payload['recipient_name'] === null
+                && $payload['group_identifier'] === null
+                && empty($payload['team_members'])
+            ) {
+                continue;
+            }
+
             if (isset($row['id'])) {
-                Record::where('id', $row['id'])->where('batch_id', $batch->id)->update([
-                    'recipient_name'           => $row['recipient_name'] ?? null,
-                    'identification_number'    => $row['identification_number'] ?? null,
-                    'group_identifier'         => $row['group_identifier'] ?? null,
-                    'team_members'             => isset($row['team_members']) ? json_encode($row['team_members']) : null,
-                ]);
+                $record = $batch->records()->find($row['id']);
+                if ($record) {
+                    $record->update($payload);
+                }
             } else {
-                Record::create([
-                    'batch_id'               => $batch->id,
-                    'recipient_name'         => $row['recipient_name'] ?? null,
-                    'identification_number'  => $row['identification_number'] ?? null,
-                    'group_identifier'       => $row['group_identifier'] ?? null,
-                    'team_members'           => $row['team_members'] ?? null,
-                    'generation_status'      => 'pending',
+                $batch->records()->create($payload + [
+                    'generation_status' => 'pending',
                 ]);
             }
         }
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Normalize request/frontend rows into a strict Record payload for PostgreSQL.
+     */
+    private function normalizeRecordPayload(array $row): array
+    {
+        $recipientName = $this->normalizeNullableString($row['recipient_name'] ?? null);
+        $identificationNumber = $this->normalizeNullableString($row['identification_number'] ?? null);
+        $groupIdentifier = $this->normalizeNullableString($row['group_identifier'] ?? null);
+        $teamMembers = $this->normalizeTeamMembers($row['team_members'] ?? null);
+
+        // Keep one canonical shape:
+        // - Team record: group + team_members, recipient_name null.
+        // - Individual record: recipient_name set, group/team_members null.
+        if (!empty($teamMembers)) {
+            $recipientName = null;
+        } else {
+            $teamMembers = null;
+            $groupIdentifier = null;
+        }
+
+        return [
+            'recipient_name'        => $recipientName,
+            'identification_number' => $identificationNumber,
+            'group_identifier'      => $groupIdentifier,
+            'team_members'          => $teamMembers,
+        ];
+    }
+
+    private function normalizeNullableString(mixed $value): ?string
+    {
+        if (is_array($value)) {
+            $value = implode(', ', array_filter(array_map(function ($item) {
+                return is_scalar($item) ? trim((string) $item) : '';
+            }, $value)));
+        } elseif (!is_scalar($value) && $value !== null) {
+            $value = '';
+        }
+
+        $normalized = trim((string) ($value ?? ''));
+        return $normalized === '' ? null : $normalized;
+    }
+
+    private function normalizeTeamMembers(mixed $value): ?array
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $value = $decoded;
+            } else {
+                $value = preg_split('/[,\n]+/', $value) ?: [];
+            }
+        }
+
+        if (is_object($value)) {
+            $value = (array) $value;
+        }
+
+        if (!is_array($value)) {
+            return null;
+        }
+
+        $members = [];
+
+        foreach ($value as $member) {
+            if (is_array($member) || is_object($member)) {
+                $candidate = null;
+                if (is_array($member)) {
+                    $candidate = $member['name'] ?? $member['label'] ?? $member['value'] ?? null;
+                } else {
+                    $candidate = $member->name ?? $member->label ?? $member->value ?? null;
+                }
+                $member = $candidate;
+            }
+
+            if (!is_scalar($member) && $member !== null) {
+                continue;
+            }
+
+            $text = trim((string) ($member ?? ''));
+            if ($text !== '') {
+                $members[] = $text;
+            }
+        }
+
+        return empty($members) ? null : array_values($members);
     }
 
     /**
