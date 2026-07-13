@@ -50,10 +50,10 @@ export default function Validate({ batch, records: initialRecords }: Props) {
         setSaved(false);
     };
 
-    const save = async () => {
+    const save = async (): Promise<boolean> => {
         setSaving(true);
         try {
-            await fetch(`/batch/${batch.id}/records`, {
+            const res = await fetch(`/batch/${batch.id}/records`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -61,15 +61,25 @@ export default function Validate({ batch, records: initialRecords }: Props) {
                 },
                 body: JSON.stringify({ records: rows }),
             });
+            if (!res.ok) {
+                throw new Error('Failed to save records');
+            }
             setSaved(true);
+            return true;
+        } catch (err) {
+            console.error(err);
+            setSaved(false);
+            return false;
         } finally {
             setSaving(false);
         }
     };
 
     const proceed = async () => {
-        await save();
-        router.get(`/batch/${batch.id}/studio`);
+        const ok = await save();
+        if (ok) {
+            router.get(`/batch/${batch.id}/studio`);
+        }
     };
 
     const layout = (row: RecordRow): 'identified' | 'grouped' | 'standard' => {

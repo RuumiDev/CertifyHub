@@ -205,6 +205,7 @@ export default function Preview({ batch, templateUrl, records: initialRecords }:
                     {exportStatus === 'done' && (
                         <a
                             href={`/batch/${batch.id}/download`}
+                            download
                             className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors shadow-sm"
                         >
                             ↓ Download .zip

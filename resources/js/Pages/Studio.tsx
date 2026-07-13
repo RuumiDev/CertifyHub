@@ -128,22 +128,31 @@ export default function Studio({ batch, templateUrl, records }: Props) {
     const csrf = (): string =>
         (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? '';
 
-    const save = async () => {
+    const save = async (): Promise<boolean> => {
         setSaving(true);
         try {
-            await fetch(`/batch/${batch.id}/settings`, {
+            const res = await fetch(`/batch/${batch.id}/settings`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
                 body: JSON.stringify({ global_settings: { layers } }),
             });
+            if (!res.ok) {
+                throw new Error('Failed to save settings');
+            }
+            return true;
+        } catch (err) {
+            console.error(err);
+            return false;
         } finally {
             setSaving(false);
         }
     };
 
     const proceed = async () => {
-        await save();
-        router.get(`/batch/${batch.id}/preview`);
+        const ok = await save();
+        if (ok) {
+            router.get(`/batch/${batch.id}/preview`);
+        }
     };
  
     

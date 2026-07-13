@@ -41,7 +41,7 @@ class BatchController extends Controller
         $batch = Batch::create([
             'template_path' => $templatePath,
             'export_format' => 'pdf',
-            'global_settings' => [],
+            'global_settings' => null,
         ]);
 
         // Stream-parse CSV
@@ -67,7 +67,7 @@ class BatchController extends Controller
                         return trim($normalised[$k]);
                     }
                 }
-            }
+            } 
             return '';
         };
 
