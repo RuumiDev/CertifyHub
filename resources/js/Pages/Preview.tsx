@@ -273,11 +273,11 @@ export default function Preview({ batch, templateUrl, records: initialRecords }:
                             className="relative group rounded-xl overflow-hidden border border-slate-200 hover:border-indigo-400 transition-colors bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
                         >
                             {/* Template thumbnail — container query so font-size scales with card width */}
-                                <div className="relative aspect-[4/3] overflow-hidden bg-slate-100" style={{ containerType: 'inline-size' }}>
+                                <div className="relative overflow-hidden bg-slate-100" style={{ containerType: 'inline-size' }}>
                                 <img
                                     src={templateUrl}
                                     alt={displayName}
-                                    className="w-full h-full object-cover"
+                                    className="w-full h-auto block"
                                 />
                                 {/* Overlay text preview */}
                                 {layers.map((layer) => {

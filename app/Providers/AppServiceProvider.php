@@ -28,6 +28,22 @@ class AppServiceProvider extends ServiceProvider
             URL::forceScheme('https');
         }
 
+        // Ensure default fallback fonts exist locally for GD PDF/Image rendering
+        $fontDir = public_path('assets/fonts');
+        if (!is_dir($fontDir)) {
+            @mkdir($fontDir, 0755, true);
+        }
+        foreach (['Arial.ttf', 'Inter.ttf'] as $fontFile) {
+            $fontPath = $fontDir . '/' . $fontFile;
+            if (!file_exists($fontPath)) {
+                $fontUrl = 'https://github.com/google/fonts/raw/main/apache/roboto/static/Roboto-Regular.ttf';
+                $fontData = @file_get_contents($fontUrl);
+                if ($fontData) {
+                    @file_put_contents($fontPath, $fontData);
+                }
+            }
+        }
+
         if ($this->shouldRegisterQueueFallback()) {
             $this->app->terminating(function (): void {
                 $this->runSingleQueuedJob();

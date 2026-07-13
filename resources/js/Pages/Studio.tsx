@@ -203,7 +203,7 @@ export default function Studio({ batch, templateUrl, records }: Props) {
                     <div
                         ref={imageRef}
                         className="relative shadow-md"
-                        style={{ display: 'inline-block', touchAction: 'none' }}
+                        style={{ display: 'inline-block', touchAction: 'none', containerType: 'inline-size' }}
                     >
                         <img
                             src={templateUrl}
@@ -241,7 +241,7 @@ export default function Studio({ batch, templateUrl, records }: Props) {
                             >
                                 <span
                                     style={{
-                                        fontSize: `${layer.fontSize}px`,
+                                        fontSize: `${(layer.fontSize / 800) * 100}cqw`,
                                         color: layer.color,
                                         fontFamily: `'${layer.fontFamily}', sans-serif`,
                                         whiteSpace: 'nowrap',

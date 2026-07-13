@@ -157,7 +157,7 @@ export default function MicroEditor({ batchId, record, templateUrl, globalLayers
                         onPointerLeave={handlePointerUp}
                     >
                         {/* imageRef: inline-block so it matches the rendered image exactly */}
-                        <div ref={imageRef} className="relative shadow-md" style={{ display: 'inline-block', touchAction: 'none' }}>
+                        <div ref={imageRef} className="relative shadow-md" style={{ display: 'inline-block', touchAction: 'none', containerType: 'inline-size' }}>
                             <img
                                 src={templateUrl}
                                 alt="Template"
@@ -193,7 +193,7 @@ export default function MicroEditor({ batchId, record, templateUrl, globalLayers
                                     >
                                         <span
                                             style={{
-                                                fontSize:       `${layer.fontSize}px`,
+                                                fontSize:       `${(layer.fontSize / 800) * 100}cqw`,
                                                 color:          layer.color,
                                                 fontFamily:     `'${layer.fontFamily}', sans-serif`,
                                                 whiteSpace:     'nowrap',

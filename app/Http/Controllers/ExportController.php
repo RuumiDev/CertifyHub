@@ -110,12 +110,15 @@ class ExportController extends Controller
             ],
         ]);
 
-        $path = $request->file('font')->store('fonts', 'public');
+        $file = $request->file('font');
+        $extension = $file->getClientOriginalExtension();
+        $filename = \Illuminate\Support\Str::random(40) . '.' . $extension;
+        $path = $file->storeAs('fonts', $filename, 'public');
 
         return response()->json([
             'path' => $path,
             'url'  => asset("storage/{$path}"),
-            'name' => $request->file('font')->getClientOriginalName(),
+            'name' => $file->getClientOriginalName(),
         ]);
     }
 }

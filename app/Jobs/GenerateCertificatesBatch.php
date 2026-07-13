@@ -241,7 +241,7 @@ class GenerateCertificatesBatch implements ShouldQueue
         }
 
         ob_start();
-        $rasterFormat = $format === 'jpg' ? 'jpg' : 'png';
+        $rasterFormat = ($format === 'jpg' || $format === 'pdf') ? 'jpg' : 'png';
         match ($rasterFormat) {
             'png'  => \imagepng($src),
             default => \imagejpeg($src, null, 92),
@@ -268,7 +268,7 @@ class GenerateCertificatesBatch implements ShouldQueue
         $tmpDir = storage_path('app/framework/cache/certifyhub/pdf');
         $this->ensureWritableDirectory($tmpDir);
 
-        $tmpImagePath = $tmpDir . '/cert_' . $this->batch->id . '_' . bin2hex(random_bytes(8)) . '.png';
+        $tmpImagePath = $tmpDir . '/cert_' . $this->batch->id . '_' . bin2hex(random_bytes(8)) . '.jpg';
 
         try {
             $written = @file_put_contents($tmpImagePath, $rasterBinary);
@@ -289,7 +289,7 @@ class GenerateCertificatesBatch implements ShouldQueue
             $pdf->SetMargins(0, 0, 0);
             $pdf->SetAutoPageBreak(false, 0);
             $pdf->AddPage($orientation, $pageSize);
-            $pdf->Image($tmpImagePath, 0, 0, $pageWidthMm, $pageHeightMm, 'PNG');
+            $pdf->Image($tmpImagePath, 0, 0, $pageWidthMm, $pageHeightMm, 'JPEG');
 
             $pdfBinary = $pdf->Output('S');
 
