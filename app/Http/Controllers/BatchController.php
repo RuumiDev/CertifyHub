@@ -535,6 +535,21 @@ class BatchController extends Controller
                     $fontPath = $resolvedSystemFont;
                 }
 
+                $fontFileSize = $fontPath ? filesize($fontPath) : 0;
+                $fontHeaderHex = "";
+                $fontHeaderChars = "";
+                if ($fontPath && $fontFileSize > 0) {
+                    $fp = @fopen($fontPath, 'r');
+                    if ($fp) {
+                        $bytes = @fread($fp, 32);
+                        if ($bytes) {
+                            $fontHeaderHex = bin2hex($bytes);
+                            $fontHeaderChars = preg_replace('/[^\x20-\x7E]/', '.', $bytes);
+                        }
+                        @fclose($fp);
+                    }
+                }
+
                 $x = (int) ($xPercent / 100 * $width);
                 $y = (int) ($yPercent / 100 * $height);
 
@@ -641,6 +656,9 @@ class BatchController extends Controller
                     'x_px' => $x,
                     'y_px' => $y,
                     'font_path' => $fontPath,
+                    'font_file_size' => $fontFileSize,
+                    'font_header_hex' => $fontHeaderHex,
+                    'font_header_chars' => $fontHeaderChars,
                     'draw_method' => $drawMethod,
                     'bbox_result' => $bboxResult,
                     'draw_result' => $drawResult,
