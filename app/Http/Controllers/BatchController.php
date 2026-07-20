@@ -348,307 +348,318 @@ class BatchController extends Controller
      */
     public function debugRender(Batch $batch): void
     {
-        $record = $batch->records()->first();
-        if (!$record) {
-            abort(404, 'No records found in this batch');
-        }
+        // Set headers early to prevent 500 error response page in browser
+        header('Content-Type: text/plain; charset=utf-8');
+        header('X-Debug-Status: active');
 
-        $settings = array_merge(
-            $batch->global_settings ?? [],
-            $record->override_settings ?? [],
-        );
-
-        $templateFullPath = storage_path('app/public/' . ltrim($batch->template_path, '/'));
-
-        // Replicate Job's renderCertificate logic with deep diagnostics
-        $format = 'png';
-
-        $src = match (true) {
-            str_ends_with(strtolower($templateFullPath), '.png')  => \imagecreatefrompng($templateFullPath),
-            str_ends_with(strtolower($templateFullPath), '.jpg'),
-            str_ends_with(strtolower($templateFullPath), '.jpeg') => \imagecreatefromjpeg($templateFullPath),
-            default => null,
-        };
-
-        if (!$src) {
-            abort(500, "GD could not open template image at: " . $templateFullPath);
-        }
-
-        $width  = \imagesx($src);
-        $height = \imagesy($src);
-
-        // Convert indexed to truecolor
-        $wasIndexed = !\imageistruecolor($src);
-        if ($wasIndexed) {
-            $truecolor = \imagecreatetruecolor($width, $height);
-            \imagealphablending($truecolor, false);
-            \imagesavealpha($truecolor, true);
-            \imagecopy($truecolor, $src, 0, 0, 0, 0, $width, $height);
-            \imagedestroy($src);
-            $src = $truecolor;
-        }
-
-        \imagealphablending($src, true);
-        \imagesavealpha($src, true);
-
-        // Build Font Registry
-        $fontRegistry = [];
-        foreach ($settings['layers'] ?? [] as $layer) {
-            $family = $layer['fontFamily'] ?? '';
-            $path   = $layer['fontPath'] ?? null;
-            if ($family === '' || $path === null || isset($fontRegistry[$family])) {
-                continue;
+        try {
+            $record = $batch->records()->first();
+            if (!$record) {
+                echo "ERROR: No records found in this batch.\n";
+                exit;
             }
-            // Resolve path helper replication
-            if ($path) {
-                $normalized = ltrim(str_replace('\\', '/', $path), '/');
-                $candidates = [
-                    storage_path('app/public/' . $normalized),
-                    public_path($normalized),
-                    public_path('storage/' . $normalized),
-                    public_path('assets/fonts/' . basename($normalized)),
-                ];
-                foreach ($candidates as $absPath) {
-                    if (file_exists($absPath) && is_readable($absPath)) {
-                        $fontRegistry[$family] = $absPath;
-                        break;
-                    }
+
+            $settings = array_merge(
+                $batch->global_settings ?? [],
+                $record->override_settings ?? [],
+            );
+
+            $templateFullPath = storage_path('app/public/' . ltrim($batch->template_path, '/'));
+
+            $src = match (true) {
+                str_ends_with(strtolower($templateFullPath), '.png')  => @\imagecreatefrompng($templateFullPath),
+                str_ends_with(strtolower($templateFullPath), '.jpg'),
+                str_ends_with(strtolower($templateFullPath), '.jpeg') => @\imagecreatefromjpeg($templateFullPath),
+                default => null,
+            };
+
+            if (!$src) {
+                throw new \RuntimeException("GD could not open template image at: " . $templateFullPath);
+            }
+
+            $width  = \imagesx($src);
+            $height = \imagesy($src);
+
+            // Convert indexed to truecolor
+            $wasIndexed = !\imageistruecolor($src);
+            if ($wasIndexed) {
+                $truecolor = \imagecreatetruecolor($width, $height);
+                \imagealphablending($truecolor, false);
+                \imagesavealpha($truecolor, true);
+                \imagecopy($truecolor, $src, 0, 0, 0, 0, $width, $height);
+                \imagedestroy($src);
+                $src = $truecolor;
+            }
+
+            \imagealphablending($src, true);
+            \imagesavealpha($src, true);
+
+            // Build Font Registry
+            $fontRegistry = [];
+            foreach ($settings['layers'] ?? [] as $layer) {
+                $family = $layer['fontFamily'] ?? '';
+                $path   = $layer['fontPath'] ?? null;
+                if ($family === '' || $path === null || isset($fontRegistry[$family])) {
+                    continue;
                 }
-            }
-        }
-        $anyUploadedFont = !empty($fontRegistry) ? array_values($fontRegistry)[0] : null;
-
-        // Fallbacks
-        $systemFallbackCandidates = [
-            public_path('assets/fonts/Inter.ttf'),
-            storage_path('app/public/fonts/Inter.ttf'),
-            public_path('assets/fonts/DejaVuSans.ttf'),
-            public_path('assets/fonts/Arial.ttf'),
-            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-            '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
-            '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
-        ];
-        $resolvedSystemFont = null;
-        foreach ($systemFallbackCandidates as $path) {
-            if (file_exists($path) && is_readable($path)) {
-                $resolvedSystemFont = $path;
-                break;
-            }
-        }
-
-        $layers = $settings['layers'] ?? [];
-        $scaleMultiplier = $width / 800.0;
-
-        $trace = [];
-
-        foreach ($layers as $layer) {
-            $field = $layer['field'] ?? 'name';
-
-            // Resolve text
-            $text = '';
-            if ($field === 'name') {
-                $members = $record->team_members;
-                if (is_string($members) && $members !== '') {
-                    $members = json_decode($members, true) ?? [];
-                }
-                if (!empty($members) && is_array($members)) {
-                    $groupFormat = $layer['groupFormat'] ?? 'vertical';
-                    $text = $groupFormat === 'horizontal' ? implode(', ', $members) : implode("\n", $members);
-                } else {
-                    $text = $record->recipient_name ?? '';
-                }
-            } else if ($field === 'ic') {
-                $text = $record->identification_number ?? '';
-            } else if ($field === 'group') {
-                $text = $record->group_identifier ?? '';
-            }
-
-            if ($text === '') {
-                $trace[] = ['field' => $field, 'status' => 'skipped (empty text)'];
-                continue;
-            }
-
-            $fontSize  = (int) ($layer['fontSize'] ?? 24);
-            $scaledFontSize = (int) round($fontSize * $scaleMultiplier);
-            if ($scaledFontSize < 1) $scaledFontSize = 1;
-
-            $colorHex  = $layer['color'] ?? '#000000';
-            $xPercent  = (float) ($layer['x'] ?? 50.0);
-            $yPercent  = (float) ($layer['y'] ?? 50.0);
-
-            // Font Path Resolution
-            $fontPath = null;
-            if ($layer['fontPath'] ?? null) {
-                $normalized = ltrim(str_replace('\\', '/', $layer['fontPath']), '/');
-                $candidates = [
-                    storage_path('app/public/' . $normalized),
-                    public_path($normalized),
-                    public_path('storage/' . $normalized),
-                    public_path('assets/fonts/' . basename($normalized)),
-                ];
-                foreach ($candidates as $absPath) {
-                    if (file_exists($absPath) && is_readable($absPath)) {
-                        $fontPath = $absPath;
-                        break;
-                    }
-                }
-            }
-            if (!$fontPath && isset($layer['fontFamily']) && isset($fontRegistry[$layer['fontFamily']])) {
-                $fontPath = $fontRegistry[$layer['fontFamily']];
-            }
-            if (!$fontPath) {
-                $fontPath = $anyUploadedFont;
-            }
-            if (!$fontPath && isset($layer['fontFamily'])) {
-                $base = trim(pathinfo($layer['fontFamily'], PATHINFO_FILENAME));
-                $candidates = [
-                    public_path('assets/fonts/' . $base . '.ttf'),
-                    public_path('assets/fonts/' . $base . '.otf'),
-                    storage_path('app/public/fonts/' . $base . '.ttf'),
-                    storage_path('app/public/fonts/' . $base . '.otf'),
-                ];
-                foreach ($candidates as $p) {
-                    if (file_exists($p) && is_readable($p)) {
-                        $fontPath = $p;
-                        break;
-                    }
-                }
-            }
-            if (!$fontPath) {
-                $fontPath = $resolvedSystemFont;
-            }
-
-            $x = (int) ($xPercent / 100 * $width);
-            $y = (int) ($yPercent / 100 * $height);
-
-            $hex = ltrim($colorHex, '#');
-            $r = hexdec(substr($hex, 0, 2));
-            $g = hexdec(substr($hex, 2, 2));
-            $b = hexdec(substr($hex, 4, 2));
-            $color = \imagecolorallocate($src, $r, $g, $b);
-
-            $drawResult = null;
-            $bboxResult = null;
-            $drawX = null;
-            $drawY = null;
-            $drawMethod = 'none';
-
-            if ($fontPath && file_exists($fontPath) && is_readable($fontPath)) {
-                $align      = strtolower((string) ($layer['align'] ?? 'center'));
-                $ptSize     = $scaledFontSize;
-                $lines      = explode("\n", $text);
-                $totalLines = count($lines);
-                $lineGapPx  = (int) round($scaledFontSize * 0.40);
-
-                $drawResult = [];
-                $bboxResult = [];
-
-                foreach ($lines as $i => $line) {
-                    $bbox = \imagettfbbox($ptSize, 0, $fontPath, $line);
-                    $bboxResult[] = [
-                        'line' => $line,
-                        'bbox' => $bbox,
+                if ($path) {
+                    $normalized = ltrim(str_replace('\\', '/', $path), '/');
+                    $candidates = [
+                        storage_path('app/public/' . $normalized),
+                        public_path($normalized),
+                        public_path('storage/' . $normalized),
+                        public_path('assets/fonts/' . basename($normalized)),
                     ];
-
-                    if ($bbox === false) {
-                        $textWidth  = (int) round(strlen($line) * $ptSize * 0.6);
-                        $textHeight = $ptSize;
-                    } else {
-                        $textWidth  = abs($bbox[2] - $bbox[0]);
-                        $textHeight = abs($bbox[5] - $bbox[1]);
+                    foreach ($candidates as $absPath) {
+                        if (file_exists($absPath) && is_readable($absPath)) {
+                            $fontRegistry[$family] = $absPath;
+                            break;
+                        }
                     }
-
-                    $drawX = match ($align) {
-                        'center' => (int) round($x - $textWidth / 2),
-                        'left'   => $x,
-                        default  => $x - $textWidth,
-                    };
-
-                    if ($totalLines > 1) {
-                        $blockHeight    = $totalLines * $textHeight + ($totalLines - 1) * $lineGapPx;
-                        $blockCenterOff = (int) round($blockHeight / 2);
-                        $drawY = $y - $blockCenterOff + $i * ($textHeight + $lineGapPx) + $textHeight;
-                    } else {
-                        $drawY = $y + (int) round($textHeight / 2);
-                    }
-
-                    $drawn = \imagettftext($src, $ptSize, 0, $drawX, $drawY, $color, $fontPath, $line);
-                    $drawMethod = 'imagettftext';
-                    $drawResult[] = [
-                        'line' => $line,
-                        'x' => $drawX,
-                        'y' => $drawY,
-                        'ptSize' => $ptSize,
-                        'success' => $drawn !== false,
-                        'result_array' => $drawn,
-                    ];
-
-                    if ($drawn === false) {
-                        $fallbackDrawn = \imagestring($src, 5, $drawX, $drawY, $line, $color);
-                        $drawMethod = 'imagettftext_fallback_imagestring';
-                    }
-                }
-            } else {
-                $align = strtolower((string) ($layer['align'] ?? 'center'));
-                $drawResult = [];
-                $drawMethod = 'imagestring';
-                foreach (explode("\n", $text) as $i => $line) {
-                    $charWidth = 8;
-                    $textWidth = strlen($line) * $charWidth;
-                    $drawX = match ($align) {
-                        'center' => (int) round($x - $textWidth / 2),
-                        'left'   => $x,
-                        default  => $x - $textWidth,
-                    };
-                    $drawY = $y + $i * 16;
-                    $drawn = \imagestring($src, 5, $drawX, $drawY, $line, $color);
-                    $drawResult[] = [
-                        'line' => $line,
-                        'x' => $drawX,
-                        'y' => $drawY,
-                        'success' => $drawn !== false,
-                    ];
                 }
             }
+            $anyUploadedFont = !empty($fontRegistry) ? array_values($fontRegistry)[0] : null;
 
-            $trace[] = [
-                'field' => $field,
-                'text' => $text,
-                'fontSize' => $fontSize,
-                'scaledFontSize' => $scaledFontSize,
-                'color' => $colorHex,
-                'color_index' => $color,
-                'color_rgb' => [$r, $g, $b],
-                'x_percent' => $xPercent,
-                'y_percent' => $yPercent,
-                'x_px' => $x,
-                'y_px' => $y,
-                'font_path' => $fontPath,
-                'draw_method' => $drawMethod,
-                'bbox_result' => $bboxResult,
-                'draw_result' => $drawResult,
+            // Fallbacks
+            $systemFallbackCandidates = [
+                public_path('assets/fonts/Inter.ttf'),
+                storage_path('app/public/fonts/Inter.ttf'),
+                public_path('assets/fonts/DejaVuSans.ttf'),
+                public_path('assets/fonts/Arial.ttf'),
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+                '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+                '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
             ];
+            $resolvedSystemFont = null;
+            foreach ($systemFallbackCandidates as $path) {
+                if (file_exists($path) && is_readable($path)) {
+                    $resolvedSystemFont = $path;
+                    break;
+                }
+            }
+
+            $layers = $settings['layers'] ?? [];
+            $scaleMultiplier = $width / 800.0;
+
+            $trace = [];
+
+            foreach ($layers as $layer) {
+                $field = $layer['field'] ?? 'name';
+
+                // Resolve text
+                $text = '';
+                if ($field === 'name') {
+                    $members = $record->team_members;
+                    if (is_string($members) && $members !== '') {
+                        $members = json_decode($members, true) ?? [];
+                    }
+                    if (!empty($members) && is_array($members)) {
+                        $groupFormat = $layer['groupFormat'] ?? 'vertical';
+                        $text = $groupFormat === 'horizontal' ? implode(', ', $members) : implode("\n", $members);
+                    } else {
+                        $text = $record->recipient_name ?? '';
+                    }
+                } else if ($field === 'ic') {
+                    $text = $record->identification_number ?? '';
+                } else if ($field === 'group') {
+                    $text = $record->group_identifier ?? '';
+                }
+
+                if ($text === '') {
+                    $trace[] = ['field' => $field, 'status' => 'skipped (empty text)'];
+                    continue;
+                }
+
+                $fontSize  = (int) ($layer['fontSize'] ?? 24);
+                $scaledFontSize = (int) round($fontSize * $scaleMultiplier);
+                if ($scaledFontSize < 1) $scaledFontSize = 1;
+
+                $colorHex  = $layer['color'] ?? '#000000';
+                $xPercent  = (float) ($layer['x'] ?? 50.0);
+                $yPercent  = (float) ($layer['y'] ?? 50.0);
+
+                // Font Path Resolution
+                $fontPath = null;
+                if ($layer['fontPath'] ?? null) {
+                    $normalized = ltrim(str_replace('\\', '/', $layer['fontPath']), '/');
+                    $candidates = [
+                        storage_path('app/public/' . $normalized),
+                        public_path($normalized),
+                        public_path('storage/' . $normalized),
+                        public_path('assets/fonts/' . basename($normalized)),
+                    ];
+                    foreach ($candidates as $absPath) {
+                        if (file_exists($absPath) && is_readable($absPath)) {
+                            $fontPath = $absPath;
+                            break;
+                        }
+                    }
+                }
+                if (!$fontPath && isset($layer['fontFamily']) && isset($fontRegistry[$layer['fontFamily']])) {
+                    $fontPath = $fontRegistry[$layer['fontFamily']];
+                }
+                if (!$fontPath) {
+                    $fontPath = $anyUploadedFont;
+                }
+                if (!$fontPath && isset($layer['fontFamily'])) {
+                    $base = trim(pathinfo($layer['fontFamily'], PATHINFO_FILENAME));
+                    $candidates = [
+                        public_path('assets/fonts/' . $base . '.ttf'),
+                        public_path('assets/fonts/' . $base . '.otf'),
+                        storage_path('app/public/fonts/' . $base . '.ttf'),
+                        storage_path('app/public/fonts/' . $base . '.otf'),
+                    ];
+                    foreach ($candidates as $p) {
+                        if (file_exists($p) && is_readable($p)) {
+                            $fontPath = $p;
+                            break;
+                        }
+                    }
+                }
+                if (!$fontPath) {
+                    $fontPath = $resolvedSystemFont;
+                }
+
+                $x = (int) ($xPercent / 100 * $width);
+                $y = (int) ($yPercent / 100 * $height);
+
+                $hex = ltrim($colorHex, '#');
+                $r = hexdec(substr($hex, 0, 2));
+                $g = hexdec(substr($hex, 2, 2));
+                $b = hexdec(substr($hex, 4, 2));
+                $color = \imagecolorallocate($src, $r, $g, $b);
+
+                $drawResult = null;
+                $bboxResult = null;
+                $drawX = null;
+                $drawY = null;
+                $drawMethod = 'none';
+
+                if ($fontPath && file_exists($fontPath) && is_readable($fontPath)) {
+                    $align      = strtolower((string) ($layer['align'] ?? 'center'));
+                    $ptSize     = $scaledFontSize;
+                    $lines      = explode("\n", $text);
+                    $totalLines = count($lines);
+                    $lineGapPx  = (int) round($scaledFontSize * 0.40);
+
+                    $drawResult = [];
+                    $bboxResult = [];
+
+                    foreach ($lines as $i => $line) {
+                        $bbox = @\imagettfbbox($ptSize, 0, $fontPath, $line);
+                        $bboxResult[] = [
+                            'line' => $line,
+                            'bbox' => $bbox,
+                        ];
+
+                        if ($bbox === false || !$bbox) {
+                            $textWidth  = (int) round(strlen($line) * $ptSize * 0.6);
+                            $textHeight = $ptSize;
+                        } else {
+                            $textWidth  = abs($bbox[2] - $bbox[0]);
+                            $textHeight = abs($bbox[5] - $bbox[1]);
+                        }
+
+                        $drawX = match ($align) {
+                            'center' => (int) round($x - $textWidth / 2),
+                            'left'   => $x,
+                            default  => $x - $textWidth,
+                        };
+
+                        if ($totalLines > 1) {
+                            $blockHeight    = $totalLines * $textHeight + ($totalLines - 1) * $lineGapPx;
+                            $blockCenterOff = (int) round($blockHeight / 2);
+                            $drawY = $y - $blockCenterOff + $i * ($textHeight + $lineGapPx) + $textHeight;
+                        } else {
+                            $drawY = $y + (int) round($textHeight / 2);
+                        }
+
+                        $drawn = @\imagettftext($src, $ptSize, 0, $drawX, $drawY, $color, $fontPath, $line);
+                        $drawMethod = 'imagettftext';
+                        $drawResult[] = [
+                            'line' => $line,
+                            'x' => $drawX,
+                            'y' => $drawY,
+                            'ptSize' => $ptSize,
+                            'success' => $drawn !== false,
+                            'result_array' => $drawn,
+                        ];
+
+                        if ($drawn === false) {
+                            $fallbackDrawn = @\imagestring($src, 5, $drawX, $drawY, $line, $color);
+                            $drawMethod = 'imagettftext_fallback_imagestring';
+                        }
+                    }
+                } else {
+                    $align = strtolower((string) ($layer['align'] ?? 'center'));
+                    $drawResult = [];
+                    $drawMethod = 'imagestring';
+                    foreach (explode("\n", $text) as $i => $line) {
+                        $charWidth = 8;
+                        $textWidth = strlen($line) * $charWidth;
+                        $drawX = match ($align) {
+                            'center' => (int) round($x - $textWidth / 2),
+                            'left'   => $x,
+                            default  => $x - $textWidth,
+                        };
+                        $drawY = $y + $i * 16;
+                        $drawn = @\imagestring($src, 5, $drawX, $drawY, $line, $color);
+                        $drawResult[] = [
+                            'line' => $line,
+                            'x' => $drawX,
+                            'y' => $drawY,
+                            'success' => $drawn !== false,
+                        ];
+                    }
+                }
+
+                $trace[] = [
+                    'field' => $field,
+                    'text' => $text,
+                    'fontSize' => $fontSize,
+                    'scaledFontSize' => $scaledFontSize,
+                    'color' => $colorHex,
+                    'color_index' => $color,
+                    'color_rgb' => [$r, $g, $b],
+                    'x_percent' => $xPercent,
+                    'y_percent' => $yPercent,
+                    'x_px' => $x,
+                    'y_px' => $y,
+                    'font_path' => $fontPath,
+                    'draw_method' => $drawMethod,
+                    'bbox_result' => $bboxResult,
+                    'draw_result' => $drawResult,
+                ];
+            }
+
+            // Render to binary
+            ob_start();
+            \imagepng($src);
+            $rasterBinary = ob_get_clean();
+            \imagedestroy($src);
+
+            $base64Image = base64_encode($rasterBinary);
+
+            // Output Diagnostic Page as text/html
+            header('Content-Type: text/html');
+            echo "<html><head><title>CertifyHub Diagnostic Trace</title><style>body{font-family:sans-serif;background:#f8fafc;color:#0f172a;padding:20px}pre{background:#1e293b;color:#f8fafc;padding:15px;border-radius:8px;overflow-x:auto}table{width:100%;border-collapse:collapse;margin:15px 0}th,td{border:1px solid #cbd5e1;padding:8px;text-align:left}th{background:#f1f5f9}</style></head><body>";
+            echo "<h1>CertifyHub Render Diagnostics (Deep Trace)</h1>";
+            echo "<h3>Image dimensions</h3>";
+            echo "<p>Width: {$width}px, Height: {$height}px, Scale Multiplier: {$scaleMultiplier}, Was Indexed: " . ($wasIndexed ? 'YES (converted to truecolor)' : 'NO') . "</p>";
+            echo "<h3>Trace Details</h3>";
+            echo "<pre>" . htmlspecialchars(json_encode($trace, JSON_PRETTY_PRINT)) . "</pre>";
+            echo "<h3>Rendered Output</h3>";
+            echo "<img src='data:image/png;base64,{$base64Image}' style='max-width:100%;border:1px solid #000;' />";
+            echo "</body></html>";
+            exit;
+        } catch (\Throwable $e) {
+            header('Content-Type: text/plain');
+            echo "DIAGNOSTIC ERROR CAUGHT SYNCHRONOUSLY:\n";
+            echo "Message: " . $e->getMessage() . "\n";
+            echo "File: " . $e->getFile() . " on line " . $e->getLine() . "\n\n";
+            echo "Stack Trace:\n";
+            echo $e->getTraceAsString();
+            exit;
         }
-
-        // Render to binary
-        ob_start();
-        \imagepng($src);
-        $rasterBinary = ob_get_clean();
-        \imagedestroy($src);
-
-        $base64Image = base64_encode($rasterBinary);
-
-        // Output Diagnostic Page
-        header('Content-Type: text/html');
-        echo "<html><head><title>CertifyHub Diagnostic Trace</title><style>body{font-family:sans-serif;background:#f8fafc;color:#0f172a;padding:20px}pre{background:#1e293b;color:#f8fafc;padding:15px;border-radius:8px;overflow-x:auto}table{width:100%;border-collapse:collapse;margin:15px 0}th,td{border:1px solid #cbd5e1;padding:8px;text-align:left}th{background:#f1f5f9}</style></head><body>";
-        echo "<h1>CertifyHub Render Diagnostics (Deep Trace)</h1>";
-        echo "<h3>Image dimensions</h3>";
-        echo "<p>Width: {$width}px, Height: {$height}px, Scale Multiplier: {$scaleMultiplier}, Was Indexed: " . ($wasIndexed ? 'YES (converted to truecolor)' : 'NO') . "</p>";
-        echo "<h3>Trace Details</h3>";
-        echo "<pre>" . htmlspecialchars(json_encode($trace, JSON_PRETTY_PRINT)) . "</pre>";
-        echo "<h3>Rendered Output</h3>";
-        echo "<img src='data:image/png;base64,{$base64Image}' style='max-width:100%;border:1px solid #000;' />";
-        echo "</body></html>";
-        exit;
     }
 }
