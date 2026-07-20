@@ -354,19 +354,110 @@ class BatchController extends Controller
         }
 
         $job = new \App\Jobs\GenerateCertificatesBatch($batch);
-        $ref = new \ReflectionMethod($job, 'renderCertificate');
-        $ref->setAccessible(true);
+
+        // Use reflection to access helper methods on the Job
+        $refRender = new \ReflectionMethod($job, 'renderCertificate');
+        $refRender->setAccessible(true);
+
+        $refFontPath = new \ReflectionMethod($job, 'resolveFontPath');
+        $refFontPath->setAccessible(true);
+
+        $refSysFont = new \ReflectionMethod($job, 'resolveSystemFontFallback');
+        $refSysFont->setAccessible(true);
+
+        $refRepoFont = new \ReflectionMethod($job, 'resolveRepositoryFontFallback');
+        $refRepoFont->setAccessible(true);
+
+        $refRegistry = new \ReflectionMethod($job, 'buildFontRegistry');
+        $refRegistry->setAccessible(true);
 
         $settings = array_merge(
             $batch->global_settings ?? [],
             $record->override_settings ?? [],
         );
+
         $templateFullPath = storage_path('app/public/' . ltrim($batch->template_path, '/'));
 
+        // Collect debug info
+        $debugInfo = [];
+        $debugInfo['record'] = $record->toArray();
+        $debugInfo['template_path_exists'] = file_exists($templateFullPath);
+        $debugInfo['template_path'] = $templateFullPath;
+        $debugInfo['global_settings'] = $batch->global_settings;
+        $debugInfo['override_settings'] = $record->override_settings;
+        $debugInfo['merged_settings'] = $settings;
+
+        $fontRegistry = $refRegistry->invoke($job, $settings);
+        $debugInfo['font_registry'] = $fontRegistry;
+        $anyUploadedFont = !empty($fontRegistry) ? array_values($fontRegistry)[0] : null;
+        $debugInfo['any_uploaded_font'] = $anyUploadedFont;
+
+        $layersDebug = [];
+        $layers = $settings['layers'] ?? [];
+        foreach ($layers as $layer) {
+            $fontFamily = $layer['fontFamily'] ?? null;
+            $layerFontPath = $layer['fontPath'] ?? null;
+
+            $resolvedPath = $refFontPath->invoke($job, $layerFontPath)
+                            ?? ($fontRegistry[$fontFamily ?? ''] ?? null)
+                            ?? $anyUploadedFont
+                            ?? $refRepoFont->invoke($job, $fontFamily)
+                            ?? $refSysFont->invoke($job);
+
+            $layersDebug[] = [
+                'field' => $layer['field'] ?? '?',
+                'text' => $layer['field'] === 'name' ? ($record->recipient_name ?? '') : ($record->group_identifier ?? ''),
+                'x_percent' => $layer['x'] ?? null,
+                'y_percent' => $layer['y'] ?? null,
+                'font_family' => $fontFamily,
+                'font_path_stored' => $layerFontPath,
+                'font_path_resolved' => $resolvedPath,
+                'font_path_exists' => $resolvedPath !== null && file_exists($resolvedPath),
+                'font_path_readable' => $resolvedPath !== null && is_readable($resolvedPath),
+            ];
+        }
+        $debugInfo['layers'] = $layersDebug;
+
         try {
-            [$image, $format] = $ref->invoke($job, $templateFullPath, $record, $settings, 'png');
-            header('Content-Type: image/png');
-            echo $image;
+            [$image, $format] = $refRender->invoke($job, $templateFullPath, $record, $settings, 'png');
+            $base64Image = base64_encode($image);
+
+            // Output a diagnostic HTML page
+            header('Content-Type: text/html');
+            echo "<html><head><title>CertifyHub Diagnostic</title><style>body{font-family:sans-serif;background:#f8fafc;color:#0f172a;padding:20px}pre{background:#000;color:#0f0;padding:15px;border-radius:8px;overflow-x:auto}table{width:100%;border-collapse:collapse;margin:15px 0}th,td{border:1px solid #cbd5e1;padding:8px;text-align:left}th{background:#f1f5f9}</style></head><body>";
+            echo "<h1>CertifyHub Render Diagnostics</h1>";
+            echo "<h3>Environment & Records Info</h3>";
+            echo "<table>";
+            echo "<tr><th>Parameter</th><th>Value</th></tr>";
+            echo "<tr><td>Template Path Exists</td><td>" . ($debugInfo['template_path_exists'] ? "YES" : "NO") . " (" . $debugInfo['template_path'] . ")</td></tr>";
+            echo "<tr><td>Record Name</td><td>" . ($record->recipient_name ?? 'NULL') . "</td></tr>";
+            echo "<tr><td>Record ID</td><td>" . $record->id . "</td></tr>";
+            echo "</table>";
+
+            echo "<h3>Layers Info</h3>";
+            echo "<table>";
+            echo "<tr><th>Field</th><th>Text</th><th>X%</th><th>Y%</th><th>Font Family</th><th>Stored Path</th><th>Resolved Path</th><th>Exists</th><th>Readable</th></tr>";
+            foreach ($debugInfo['layers'] as $ld) {
+                echo "<tr>";
+                echo "<td>" . htmlspecialchars($ld['field']) . "</td>";
+                echo "<td>" . htmlspecialchars($ld['text']) . "</td>";
+                echo "<td>" . htmlspecialchars($ld['x_percent']) . "</td>";
+                echo "<td>" . htmlspecialchars($ld['y_percent']) . "</td>";
+                echo "<td>" . htmlspecialchars($ld['font_family']) . "</td>";
+                echo "<td>" . htmlspecialchars($ld['font_path_stored'] ?? 'NULL') . "</td>";
+                echo "<td>" . htmlspecialchars($ld['font_path_resolved'] ?? 'NULL') . "</td>";
+                echo "<td>" . ($ld['font_path_exists'] ? "YES" : "NO") . "</td>";
+                echo "<td>" . ($ld['font_path_readable'] ? "YES" : "NO") . "</td>";
+                echo "</tr>";
+            }
+            echo "</table>";
+
+            echo "<h3>Raw Global Settings</h3>";
+            echo "<pre>" . htmlspecialchars(json_encode($debugInfo['global_settings'], JSON_PRETTY_PRINT)) . "</pre>";
+
+            echo "<h3>Rendered Output</h3>";
+            echo "<img src='data:image/png;base64,{$base64Image}' style='max-width:100%;border:1px solid #000;' />";
+            echo "</body></html>";
             exit;
         } catch (\Throwable $e) {
             header('Content-Type: text/plain');
