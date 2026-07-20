@@ -12,14 +12,14 @@ const SYSTEM_FONTS: FontOption[] = [
 ];
 
 /** Maps alignment to a CSS transform so the (x,y) pin is the text anchor.
- *  'left'  → right edge at pin (text extends leftward)
- *  'center'→ center at pin
- *  'right' → left edge at pin (text extends rightward)
+ *  'left'   → left edge at pin (text extends rightward)  — translate(0%, -50%)
+ *  'center' → center at pin                               — translate(-50%, -50%)
+ *  'right'  → right edge at pin (text extends leftward)  — translate(-100%, -50%)
  */
 const alignTransform = (align: 'left' | 'center' | 'right') => {
     switch (align) {
-        case 'left':   return 'translate(-100%, -50%)';
-        case 'right':  return 'translate(0%, -50%)';
+        case 'left':   return 'translate(0%, -50%)';
+        case 'right':  return 'translate(-100%, -50%)';
         default:       return 'translate(-50%, -50%)';
     }
 };

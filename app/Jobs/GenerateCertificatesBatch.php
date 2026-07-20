@@ -242,10 +242,18 @@ class GenerateCertificatesBatch implements ShouldQueue
 
         ob_start();
         $rasterFormat = ($format === 'jpg' || $format === 'pdf') ? 'jpg' : 'png';
-        match ($rasterFormat) {
-            'png'  => \imagepng($src),
-            default => \imagejpeg($src, null, 92),
-        };
+        if ($rasterFormat === 'jpg') {
+            // Flatten alpha onto white background before JPEG encoding —
+            // without this, transparent PNG templates render black backgrounds.
+            $flat = \imagecreatetruecolor($width, $height);
+            $white = \imagecolorallocate($flat, 255, 255, 255);
+            \imagefill($flat, 0, 0, $white);
+            \imagecopy($flat, $src, 0, 0, 0, 0, $width, $height);
+            \imagejpeg($flat, null, 92);
+            \imagedestroy($flat);
+        } else {
+            \imagepng($src);
+        }
         $rasterBinary = ob_get_clean();
         \imagedestroy($src);
 
@@ -408,7 +416,7 @@ class GenerateCertificatesBatch implements ShouldQueue
             @mkdir($dir, 0755, true);
         }
 
-        $url = "https://github.com/google/fonts/raw/main/ofl/inter/static/Inter-Regular.ttf";
+        $url = "https://github.com/rsms/inter/raw/master/fonts/inter/Inter-Regular.ttf";
         $ctx = stream_context_create([
             'http' => [
                 'timeout' => 15,
