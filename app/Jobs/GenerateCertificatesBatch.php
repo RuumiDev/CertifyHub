@@ -101,12 +101,22 @@ class GenerateCertificatesBatch implements ShouldQueue
             throw new \RuntimeException("GD could not open template: {$templatePath}");
         }
 
+        $width  = \imagesx($src);
+        $height = \imagesy($src);
+
+        // Convert indexed images to truecolor to avoid color allocation issues when drawing text
+        if (!\imageistruecolor($src)) {
+            $truecolor = \imagecreatetruecolor($width, $height);
+            \imagealphablending($truecolor, false);
+            \imagesavealpha($truecolor, true);
+            \imagecopy($truecolor, $src, 0, 0, 0, 0, $width, $height);
+            \imagedestroy($src);
+            $src = $truecolor;
+        }
+
         // Preserve alpha for PNG sources
         \imagealphablending($src, true);
         \imagesavealpha($src, true);
-
-        $width  = \imagesx($src);
-        $height = \imagesy($src);
 
         $layers = $settings['layers'] ?? [];
         $scaleMultiplier = $width / self::STUDIO_BASE_WIDTH;

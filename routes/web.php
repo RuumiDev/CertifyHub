@@ -28,4 +28,7 @@ Route::get('/batch/{batch}/download', [ExportController::class, 'download'])->na
 // Font upload
 Route::post('/fonts/upload', [ExportController::class, 'uploadFont'])->name('fonts.upload');
 
+// Debug Render
+Route::get('/batch/{batch}/debug-render', [BatchController::class, 'debugRender'])->name('batch.debug-render');
+
 

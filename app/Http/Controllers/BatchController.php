@@ -342,4 +342,38 @@ class BatchController extends Controller
 
         return response()->json(['ok' => true]);
     }
+
+    /**
+     * Synchronous debug endpoint for template rendering.
+     */
+    public function debugRender(Batch $batch): void
+    {
+        $record = $batch->records()->first();
+        if (!$record) {
+            abort(404, 'No records found in this batch');
+        }
+
+        $job = new \App\Jobs\GenerateCertificatesBatch($batch);
+        $ref = new \ReflectionMethod($job, 'renderCertificate');
+        $ref->setAccessible(true);
+
+        $settings = array_merge(
+            $batch->global_settings ?? [],
+            $record->override_settings ?? [],
+        );
+        $templateFullPath = storage_path('app/public/' . ltrim($batch->template_path, '/'));
+
+        try {
+            [$image, $format] = $ref->invoke($job, $templateFullPath, $record, $settings, 'png');
+            header('Content-Type: image/png');
+            echo $image;
+            exit;
+        } catch (\Throwable $e) {
+            header('Content-Type: text/plain');
+            echo "Error during render:\n";
+            echo $e->getMessage() . "\n\n";
+            echo $e->getTraceAsString();
+            exit;
+        }
+    }
 }
