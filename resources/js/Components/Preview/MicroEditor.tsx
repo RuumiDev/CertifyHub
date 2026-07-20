@@ -61,6 +61,21 @@ export default function MicroEditor({ batchId, record, templateUrl, globalLayers
     const imageRef  = useRef<HTMLDivElement>(null);
     const dragOffset = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
 
+    const [canvasWidth, setCanvasWidth] = useState(800);
+
+    React.useEffect(() => {
+        if (!imageRef.current) return;
+        const observer = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                if (entry.contentRect.width > 0) {
+                    setCanvasWidth(entry.contentRect.width);
+                }
+            }
+        });
+        observer.observe(imageRef.current);
+        return () => observer.disconnect();
+    }, []);
+
     const updateLayer = (id: string, patch: Partial<Layer>) =>
         setLayers((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
 
@@ -157,7 +172,7 @@ export default function MicroEditor({ batchId, record, templateUrl, globalLayers
                         onPointerLeave={handlePointerUp}
                     >
                         {/* imageRef: inline-block so it matches the rendered image exactly */}
-                        <div ref={imageRef} className="relative shadow-md" style={{ display: 'inline-block', touchAction: 'none', containerType: 'inline-size' }}>
+                        <div ref={imageRef} className="relative shadow-md" style={{ display: 'inline-block', touchAction: 'none' }}>
                             <img
                                 src={templateUrl}
                                 alt="Template"
@@ -193,7 +208,7 @@ export default function MicroEditor({ batchId, record, templateUrl, globalLayers
                                     >
                                         <span
                                             style={{
-                                                fontSize:       `${(layer.fontSize / 800) * 100}cqw`,
+                                                fontSize:       `${(layer.fontSize / 800) * canvasWidth}px`,
                                                 color:          layer.color,
                                                 fontFamily:     `'${layer.fontFamily}', sans-serif`,
                                                 whiteSpace:     'nowrap',

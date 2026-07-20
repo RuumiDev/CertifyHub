@@ -82,6 +82,21 @@ export default function Studio({ batch, templateUrl, records }: Props) {
     const imageRef = useRef<HTMLDivElement>(null);
     const dragOffset = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
 
+    const [canvasWidth, setCanvasWidth] = useState(800);
+
+    React.useEffect(() => {
+        if (!imageRef.current) return;
+        const observer = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                if (entry.contentRect.width > 0) {
+                    setCanvasWidth(entry.contentRect.width);
+                }
+            }
+        });
+        observer.observe(imageRef.current);
+        return () => observer.disconnect();
+    }, []);
+
     const hasIc    = records.some((r) => r.identification_number);
     const hasGroup = records.some((r) => r.group_identifier);
     const visibleLayerIds = ['name', ...(hasIc ? ['ic'] : []), ...(hasGroup ? ['group'] : [])];
@@ -203,7 +218,7 @@ export default function Studio({ batch, templateUrl, records }: Props) {
                         <div
                             ref={imageRef}
                             className="relative shadow-md"
-                            style={{ display: 'inline-block', touchAction: 'none', containerType: 'inline-size' }}
+                            style={{ display: 'inline-block', touchAction: 'none' }}
                         >
                             <img
                                 src={templateUrl}
@@ -241,7 +256,7 @@ export default function Studio({ batch, templateUrl, records }: Props) {
                             >
                                 <span
                                     style={{
-                                        fontSize: `${(layer.fontSize / 800) * 100}cqw`,
+                                        fontSize: `${(layer.fontSize / 800) * canvasWidth}px`,
                                         color: layer.color,
                                         fontFamily: `'${layer.fontFamily}', sans-serif`,
                                         whiteSpace: 'nowrap',
