@@ -340,11 +340,22 @@ export default function Preview({ batch, templateUrl, records: initialRecords }:
                                     </span>
                                 </div>
                             </div>
-                            <div className="p-2 text-left">
-                                <p className="text-xs text-slate-700 font-medium truncate">{displayName}</p>
-                                {record.override_settings && (
-                                    <span className="text-xs text-indigo-600">Custom</span>
-                                )}
+                            <div className="p-2 flex items-center justify-between">
+                                <div className="truncate">
+                                    <p className="text-xs text-slate-700 font-medium truncate">{displayName}</p>
+                                    {record.override_settings && (
+                                        <span className="text-xs text-indigo-600">Custom</span>
+                                    )}
+                                </div>
+                                <a
+                                    href={`/batch/${batch.id}/debug-render`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-[10px] text-slate-400 hover:text-indigo-600 underline font-medium transition-colors"
+                                >
+                                    Debug Render
+                                </a>
                             </div>
                         </button>
                     );
