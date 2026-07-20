@@ -161,7 +161,7 @@ export default function MicroEditor({ batchId, record, templateUrl, globalLayers
                             <img
                                 src={templateUrl}
                                 alt="Template"
-                                style={{ display: 'block', maxWidth: '90%', maxHeight: '60vh', margin: 'auto' }}
+                                style={{ display: 'block', maxWidth: '100%', maxHeight: '60vh' }}
                                 draggable={false}
                             />
                             {layers.map((layer) => {

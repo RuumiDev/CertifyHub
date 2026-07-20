@@ -294,7 +294,7 @@ class BatchController extends Controller
     {
         return Inertia::render('Studio', [
             'batch'        => $batch,
-            'templateUrl'  => Storage::disk('public')->url($batch->template_path),
+            'templateUrl'  => '/storage/' . ltrim($batch->template_path, '/'),
             'records'      => $batch->records()->orderBy('id')->get(),
         ]);
     }
@@ -322,7 +322,7 @@ class BatchController extends Controller
     {
         return Inertia::render('Preview', [
             'batch'       => $batch,
-            'templateUrl' => Storage::disk('public')->url($batch->template_path),
+            'templateUrl' => '/storage/' . ltrim($batch->template_path, '/'),
             'records'     => $batch->records()->orderBy('id')->get(),
         ]);
     }

@@ -200,17 +200,17 @@ export default function Studio({ batch, templateUrl, records }: Props) {
                     onPointerLeave={handlePointerUp}
                 >
                     {/* imageRef: scoped to the actual image dimensions for correct % math */}
-                    <div
-                        ref={imageRef}
-                        className="relative shadow-md"
-                        style={{ display: 'inline-block', touchAction: 'none', containerType: 'inline-size' }}
-                    >
-                        <img
-                            src={templateUrl}
-                            alt="Certificate template"
-                            style={{ display: 'block', maxWidth: '90%', maxHeight: '90vh', margin: 'auto' }}
-                            draggable={false}
-                            onError={(e) => {
+                        <div
+                            ref={imageRef}
+                            className="relative shadow-md"
+                            style={{ display: 'inline-block', touchAction: 'none', containerType: 'inline-size' }}
+                        >
+                            <img
+                                src={templateUrl}
+                                alt="Certificate template"
+                                style={{ display: 'block', maxWidth: '100%', maxHeight: '80vh' }}
+                                draggable={false}
+                                onError={(e) => {
                                 const el = e.currentTarget;
                                 el.style.minWidth = '480px';
                                 el.style.minHeight = '340px';
