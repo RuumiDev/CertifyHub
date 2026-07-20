@@ -64,7 +64,7 @@ export default function LayerPanel({ layers, activeId, onSelect, onUpdate, onUpd
     };
 
     return (
-        <aside className="fixed bottom-0 inset-x-0 z-40 max-h-[55vh] overflow-y-auto bg-white border-t border-slate-200 shadow-xl flex flex-col lg:relative lg:inset-x-auto lg:z-auto lg:w-72 lg:max-h-none lg:border-l lg:border-t-0 lg:shadow-none lg:flex-col">
+        <aside className="w-full h-[45vh] lg:w-72 lg:h-full lg:max-h-none border-t lg:border-t-0 lg:border-l border-slate-200 bg-white shadow-xl lg:shadow-none flex flex-col overflow-y-auto shrink-0 relative">
             {/* Layer list */}
             <div className="p-4 border-b border-slate-200">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Layers</p>

@@ -157,7 +157,7 @@ export default function Studio({ batch, templateUrl, records }: Props) {
  
     
     return (
-        <div className="min-h-screen bg-slate-50 flex flex-col">
+        <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
             {/* Wizard step bar */}
             <div className="bg-white border-b border-slate-200 px-6 py-2 flex items-center gap-2 text-xs font-medium">
                 {['Upload', 'Review Data', 'Design Studio', 'Preview & Export'].map((step, i) => (
@@ -194,7 +194,7 @@ export default function Studio({ batch, templateUrl, records }: Props) {
             <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
                 {/* Canvas — outer area captures pointer events (mouse + touch) */}
                 <div
-                    className="relative flex-1 min-h-0 overflow-hidden select-none bg-slate-100 flex items-center justify-center pb-[55vh] lg:pb-0"
+                    className="relative flex-1 min-h-0 overflow-hidden select-none bg-slate-100 flex items-center justify-center"
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
                     onPointerLeave={handlePointerUp}
@@ -208,7 +208,7 @@ export default function Studio({ batch, templateUrl, records }: Props) {
                         <img
                             src={templateUrl}
                             alt="Certificate template"
-                            style={{ display: 'block', maxWidth: '80vw', maxHeight: '75vh' }}
+                            style={{ display: 'block', maxWidth: '90%', maxHeight: '90vh', margin: 'auto' }}
                             draggable={false}
                             onError={(e) => {
                                 const el = e.currentTarget;

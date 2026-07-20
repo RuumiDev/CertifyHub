@@ -365,7 +365,9 @@ class GenerateCertificatesBatch implements ShouldQueue
     private function resolveSystemFontFallback(): ?string
     {
         $candidates = [
-            // Repository fallback fonts
+            // Repository / Storage fallback fonts
+            public_path('assets/fonts/Inter.ttf'),
+            storage_path('app/public/fonts/Inter.ttf'),
             public_path('assets/fonts/DejaVuSans.ttf'),
             public_path('assets/fonts/Arial.ttf'),
             // Windows
@@ -388,7 +390,41 @@ class GenerateCertificatesBatch implements ShouldQueue
             }
         }
 
+        // If no candidate exists, download Inter.ttf to storage as a self-healing fallback
+        $storagePath = storage_path('app/public/fonts/Inter.ttf');
+        $this->downloadFallbackFont($storagePath);
+
+        if (file_exists($storagePath) && is_readable($storagePath)) {
+            return $storagePath;
+        }
+
         return null;
+    }
+
+    private function downloadFallbackFont(string $dest): void
+    {
+        $dir = dirname($dest);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+
+        $url = "https://github.com/google/fonts/raw/main/ofl/inter/static/Inter-Regular.ttf";
+        $ctx = stream_context_create([
+            'http' => [
+                'timeout' => 15,
+                'follow_location' => true,
+            ]
+        ]);
+
+        Log::info("CertifyHub: Downloading fallback font Inter.ttf from CDN...");
+        $fontData = @file_get_contents($url, false, $ctx);
+        if ($fontData !== false && strlen($fontData) > 0) {
+            @file_put_contents($dest, $fontData);
+            @chmod($dest, 0644);
+            Log::info("CertifyHub: Fallback font Inter.ttf downloaded successfully.");
+        } else {
+            Log::error("CertifyHub: Failed to download fallback font from {$url}");
+        }
     }
 
     private function resolveRepositoryFontFallback(?string $fontFamily): ?string
@@ -405,6 +441,8 @@ class GenerateCertificatesBatch implements ShouldQueue
         $candidates = [
             public_path('assets/fonts/' . $base . '.ttf'),
             public_path('assets/fonts/' . $base . '.otf'),
+            storage_path('app/public/fonts/' . $base . '.ttf'),
+            storage_path('app/public/fonts/' . $base . '.otf'),
         ];
 
         foreach ($candidates as $path) {

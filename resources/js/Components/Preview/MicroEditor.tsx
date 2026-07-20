@@ -148,7 +148,7 @@ export default function MicroEditor({ batchId, record, templateUrl, globalLayers
                 </div>
 
                 {/* Body */}
-                <div className="flex flex-1 min-h-0">
+                <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-hidden">
                     {/* Canvas — outer div captures pointer events (mouse + touch) */}
                     <div
                         className="relative flex-1 overflow-hidden bg-slate-100 flex items-center justify-center"
@@ -161,7 +161,7 @@ export default function MicroEditor({ batchId, record, templateUrl, globalLayers
                             <img
                                 src={templateUrl}
                                 alt="Template"
-                                style={{ display: 'block', maxWidth: '65vw', maxHeight: '65vh' }}
+                                style={{ display: 'block', maxWidth: '90%', maxHeight: '60vh', margin: 'auto' }}
                                 draggable={false}
                             />
                             {layers.map((layer) => {
