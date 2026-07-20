@@ -64,6 +64,10 @@ export default function Validate({ batch, records: initialRecords }: Props) {
             if (!res.ok) {
                 throw new Error('Failed to save records');
             }
+            const data = await res.json();
+            if (data.records) {
+                setRows(data.records);
+            }
             setSaved(true);
             return true;
         } catch (err) {

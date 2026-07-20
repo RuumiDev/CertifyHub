@@ -169,6 +169,9 @@ class BatchController extends Controller
             'records.*.team_members'              => ['nullable'],
         ]);
 
+        $receivedIds = collect($validated['records'])->pluck('id')->filter()->toArray();
+        $batch->records()->whereNotIn('id', $receivedIds)->delete();
+
         foreach ($validated['records'] as $row) {
             $payload = $this->normalizeRecordPayload($row);
 
@@ -193,7 +196,10 @@ class BatchController extends Controller
             }
         }
 
-        return response()->json(['ok' => true]);
+        return response()->json([
+            'ok' => true,
+            'records' => $batch->records()->orderBy('id')->get(),
+        ]);
     }
 
     /**

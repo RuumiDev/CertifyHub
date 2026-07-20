@@ -35,10 +35,30 @@ class AppServiceProvider extends ServiceProvider
         }
         foreach (['Arial.ttf', 'Inter.ttf'] as $fontFile) {
             $fontPath = $fontDir . '/' . $fontFile;
+            // Self-heal corrupt font downloads that contain HTML webpages instead of TrueType binary
+            if (file_exists($fontPath)) {
+                $fp = @fopen($fontPath, 'r');
+                if ($fp) {
+                    $header = @fread($fp, 50);
+                    @fclose($fp);
+                    if ($header && (str_contains($header, '<!DOCTYPE') || str_contains($header, '<html'))) {
+                        @unlink($fontPath);
+                    }
+                }
+            }
             if (!file_exists($fontPath)) {
-                $fontUrl = 'https://github.com/google/fonts/raw/main/apache/roboto/static/Roboto-Regular.ttf';
-                $fontData = @file_get_contents($fontUrl);
-                if ($fontData) {
+                // Use raw.githubusercontent.com directly to avoid HTTP redirects
+                $fontUrl = 'https://raw.githubusercontent.com/google/fonts/main/apache/roboto/static/Roboto-Regular.ttf';
+                // Add stream context with user-agent to bypass raw request blocks
+                $ctx = stream_context_create([
+                    'http' => [
+                        'user_agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'follow_location' => true,
+                        'timeout' => 15,
+                    ]
+                ]);
+                $fontData = @file_get_contents($fontUrl, false, $ctx);
+                if ($fontData && strlen($fontData) > 5000) {
                     @file_put_contents($fontPath, $fontData);
                 }
             }
