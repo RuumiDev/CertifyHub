@@ -366,6 +366,20 @@ class BatchController extends Controller
 
             $templateFullPath = storage_path('app/public/' . ltrim($batch->template_path, '/'));
 
+            $exists = file_exists($templateFullPath);
+            $readable = $exists ? is_readable($templateFullPath) : false;
+            $size = $exists ? filesize($templateFullPath) : 0;
+
+            if (!$exists) {
+                throw new \RuntimeException("Template file does not exist at path: " . $templateFullPath);
+            }
+            if (!$readable) {
+                throw new \RuntimeException("Template file exists but is NOT readable at path: " . $templateFullPath);
+            }
+            if ($size === 0) {
+                throw new \RuntimeException("Template file exists but is EMPTY (0 bytes) at path: " . $templateFullPath);
+            }
+
             $src = match (true) {
                 str_ends_with(strtolower($templateFullPath), '.png')  => @\imagecreatefrompng($templateFullPath),
                 str_ends_with(strtolower($templateFullPath), '.jpg'),
@@ -374,7 +388,8 @@ class BatchController extends Controller
             };
 
             if (!$src) {
-                throw new \RuntimeException("GD could not open template image at: " . $templateFullPath);
+                $gdError = error_get_last();
+                throw new \RuntimeException("GD could not open template image at: " . $templateFullPath . ". GD Error: " . json_encode($gdError));
             }
 
             $width  = \imagesx($src);
